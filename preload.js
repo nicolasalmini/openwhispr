@@ -500,9 +500,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getNoteRecordingConfig: () => ipcRenderer.invoke("get-note-recording-config"),
 
   // Cloud audio file transcription
-  transcribeAudioFileCloud: (filePath) =>
-    ipcRenderer.invoke("transcribe-audio-file-cloud", filePath),
+  transcribeAudioFileCloud: (filePath, options) =>
+    ipcRenderer.invoke("transcribe-audio-file-cloud", filePath, options),
   transcribeAudioFileByok: (options) => ipcRenderer.invoke("transcribe-audio-file-byok", options),
+  cancelUploadTranscription: (requestId) =>
+    ipcRenderer.invoke("cancel-upload-transcription", requestId),
   onUploadTranscriptionProgress: registerListener(
     "upload-transcription-progress",
     (callback) => (_event, data) => callback(data)

@@ -2100,7 +2100,12 @@
       "switchToCloudForLargeFiles": "切换到 OpenWhispr Cloud 来转录此文件。",
       "createAccount": "创建账户",
       "upgrade": "升级",
-      "switchToCloud": "OpenWhispr Cloud"
+      "switchToCloud": "OpenWhispr Cloud",
+      "cancelRestartTitle": "重启本地模型服务器？",
+      "cancelRestartBody": "取消本地转录会重启模型服务器，这需要几秒钟。",
+      "cancelRestartProceed": "继续",
+      "keepTranscribing": "继续转录",
+      "restartingServer": "正在重启本地模型服务器…"
     },
     "meeting": {
       "title": "会议笔记",

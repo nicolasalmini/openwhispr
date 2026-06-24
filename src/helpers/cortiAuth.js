@@ -16,7 +16,7 @@ function assertValidTarget(environment, tenant) {
   }
 }
 
-async function getCortiToken({ environment, tenant, clientId, clientSecret }) {
+async function getCortiToken({ environment, tenant, clientId, clientSecret, signal }) {
   assertValidTarget(environment, tenant);
 
   const cacheKey = `${environment}/${tenant}/${clientId}`;
@@ -36,6 +36,7 @@ async function getCortiToken({ environment, tenant, clientId, clientSecret }) {
         client_secret: clientSecret,
         scope: "openid",
       }).toString(),
+      signal,
     }
   );
 

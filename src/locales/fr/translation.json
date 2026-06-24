@@ -2216,7 +2216,12 @@
       "switchToCloudForLargeFiles": "Passez à OpenWhispr Cloud pour transcrire ce fichier.",
       "createAccount": "Créer un compte",
       "upgrade": "Mettre à niveau",
-      "switchToCloud": "OpenWhispr Cloud"
+      "switchToCloud": "OpenWhispr Cloud",
+      "cancelRestartTitle": "Redémarrer le serveur du modèle local ?",
+      "cancelRestartBody": "Annuler une transcription locale redémarre le serveur du modèle. Cela prend quelques secondes.",
+      "cancelRestartProceed": "Continuer",
+      "keepTranscribing": "Continuer la transcription",
+      "restartingServer": "Redémarrage du serveur du modèle local…"
     },
     "meeting": {
       "title": "Notes de réunion",

@@ -14,6 +14,7 @@ const DeepgramStreaming = require("./deepgramStreaming");
 const CortiStreaming = require("./cortiStreaming");
 const OpenAIRealtimeStreaming = require("./openaiRealtimeStreaming");
 const { getCortiToken } = require("./cortiAuth");
+const { createAbortError } = require("./abortError");
 const AudioStorageManager = require("./audioStorage");
 const liveSpeakerIdentifier = require("./liveSpeakerIdentifier");
 const MeetingEchoLeakDetector = require("./meetingEchoLeakDetector");
@@ -149,7 +150,7 @@ function buildMultipartBody(fileBuffer, fileName, contentType, fields = {}) {
   return { body: Buffer.concat(bodyParts), boundary };
 }
 
-async function postMultipart(url, body, boundary, headers = {}) {
+async function postMultipart(url, body, boundary, headers = {}, { signal } = {}) {
   const response = await net.fetch(url.toString(), {
     method: "POST",
     headers: {
@@ -158,6 +159,7 @@ async function postMultipart(url, body, boundary, headers = {}) {
     },
     body,
     useSessionCookies: false,
+    signal,
   });
   const text = await response.text();
   try {
@@ -198,6 +200,7 @@ async function chunkedCloudTranscribe({
   authHeader,
   multipartFields = {},
   onProgress,
+  signal,
   concurrencyLimit = CLOUD_CHUNK_CONCURRENCY,
   segmentDuration = CLOUD_CHUNK_SEGMENT_SECONDS,
 }) {
@@ -219,7 +222,7 @@ async function chunkedCloudTranscribe({
   try {
     onProgress?.({ stage: "splitting", chunksTotal: 0, chunksCompleted: 0 });
 
-    const chunkPaths = await splitAudioFile(inputPath, chunkDir, { segmentDuration });
+    const chunkPaths = await splitAudioFile(inputPath, chunkDir, { segmentDuration, signal });
     const totalChunks = chunkPaths.length;
 
     onProgress?.({ stage: "transcribing", chunksTotal: totalChunks, chunksCompleted: 0 });
@@ -238,7 +241,7 @@ async function chunkedCloudTranscribe({
         multipartFields
       );
       const url = new URL(`${apiUrl}/api/transcribe`);
-      const data = await postMultipart(url, body, boundary, authHeader);
+      const data = await postMultipart(url, body, boundary, authHeader, { signal });
 
       results[index] = interpretTranscribeResponse(data);
       completedCount++;
@@ -251,11 +254,15 @@ async function chunkedCloudTranscribe({
 
     const executing = new Set();
     for (let index = 0; index < totalChunks; index++) {
+      if (signal?.aborted) break;
       const p = transcribeChunk(index).then(
         () => executing.delete(p),
         (err) => {
           executing.delete(p);
           if (err.code === "AUTH_EXPIRED" || err.code === "LIMIT_REACHED") throw err;
+          // Abort is handled once after the loop; swallow here so the settled
+          // chunk promises never surface as unhandled rejections.
+          if (err.name === "AbortError") return;
           if (err.code) failureCodes.add(err.code);
           debugLogger.warn(`Chunk ${index} failed`, { error: err.message, code: err.code });
         }
@@ -266,6 +273,8 @@ async function chunkedCloudTranscribe({
       }
     }
     await Promise.all(executing);
+
+    if (signal?.aborted) throw createAbortError();
 
     const succeeded = results.filter((r) => r !== null);
     if (succeeded.length === 0) {
@@ -330,6 +339,9 @@ class IPCHandlers {
     this.oauthProtocolRegistered = managers.oauthProtocolRegistered === true;
     this.oauthProtocol = managers.oauthProtocol || "openwhispr";
     this.sessionId = crypto.randomUUID();
+    // requestId -> { controller, serverManager?, killServer? } for in-flight
+    // audio-upload transcriptions, so a generic cancel can abort the exact job.
+    this._uploadTranscriptionControllers = new Map();
     this.assemblyAiStreaming = null;
     this.deepgramStreaming = null;
     this.cortiStreaming = null;
@@ -381,6 +393,16 @@ class IPCHandlers {
   _setWhisperVadSettings(update = {}) {
     this.whisperVadSettings = { ...this._getWhisperVadSettings(), ...update };
     return this._getWhisperVadSettings();
+  }
+
+  // Registers a fresh AbortController for an in-flight upload transcription.
+  // Must be called synchronously before the first await so a racing cancel finds
+  // the entry; callers delete it in a finally. `extra` carries the shared server
+  // manager + kill fn for the local path (used to free the native worker).
+  _registerUploadController(requestId, extra = {}) {
+    const controller = new AbortController();
+    this._uploadTranscriptionControllers.set(requestId, { controller, ...extra });
+    return controller;
   }
 
   _resolveWhisperVadOptions(context) {
@@ -1538,21 +1560,43 @@ class IPCHandlers {
 
     ipcMain.handle("transcribe-audio-file", async (event, filePath, options = {}) => {
       const fs = require("fs");
+      const { requestId } = options;
+      const isParakeet = options.provider === "nvidia";
+
+      let controller = null;
+      if (requestId) {
+        // The local engines share one long-lived server with dictation/meeting
+        // jobs; expose its in-flight count + kill fn so the cancel path can free
+        // the native worker only when this upload is the sole consumer.
+        const serverManager = isParakeet
+          ? this.parakeetManager.serverManager
+          : this.whisperManager.serverManager;
+        const killServer = isParakeet
+          ? () => serverManager.stopServer()
+          : () => serverManager.stop();
+        controller = this._registerUploadController(requestId, { serverManager, killServer });
+      }
+
       try {
         const audioBuffer = fs.readFileSync(filePath);
-        if (options.provider === "nvidia") {
-          const result = await this.parakeetManager.transcribeLocalParakeet(audioBuffer, options);
-          return result;
+        if (isParakeet) {
+          return await this.parakeetManager.transcribeLocalParakeet(audioBuffer, {
+            ...options,
+            signal: controller?.signal,
+          });
         }
         const vadOptions = this._resolveWhisperVadOptions("noteRecording");
-        const result = await this.whisperManager.transcribeLocalWhisper(audioBuffer, {
+        return await this.whisperManager.transcribeLocalWhisper(audioBuffer, {
           ...options,
           ...vadOptions,
+          signal: controller?.signal,
         });
-        return result;
       } catch (error) {
+        if (error.name === "AbortError") return { success: false, code: "CANCELLED" };
         debugLogger.error("Audio file transcription error", { error: error.message });
         return { success: false, error: error.message };
+      } finally {
+        if (requestId) this._uploadTranscriptionControllers.delete(requestId);
       }
     });
 
@@ -1775,6 +1819,27 @@ class IPCHandlers {
 
     ipcMain.handle("cancel-whisper-download", async (event) => {
       return this.whisperManager.cancelDownload();
+    });
+
+    // Cancels an in-flight audio-upload transcription. Cloud/BYOK aborts are
+    // instant and free. Local engines share a long-lived server with no cancel
+    // endpoint, so when the upload is the only in-flight consumer we kill the
+    // server to truly free the native worker (it cold-starts on next use);
+    // otherwise we soft-cancel and let the orphan finish to protect concurrent
+    // dictation/meeting jobs. Resolves only once it is safe to proceed.
+    ipcMain.handle("cancel-upload-transcription", async (_event, requestId) => {
+      const entry = this._uploadTranscriptionControllers.get(requestId);
+      if (!entry) return { success: false, restarted: false };
+
+      const { controller, serverManager, killServer } = entry;
+      const soleConsumer = !!serverManager && serverManager.inFlightCount() === 1;
+      controller.abort();
+
+      if (soleConsumer && killServer) {
+        await killServer();
+        return { success: true, restarted: true };
+      }
+      return { success: true, restarted: false };
     });
 
     ipcMain.handle("whisper-server-start", async (event, modelName) => {
@@ -6395,7 +6460,9 @@ class IPCHandlers {
       }
     });
 
-    ipcMain.handle("transcribe-audio-file-cloud", async (event, filePath) => {
+    ipcMain.handle("transcribe-audio-file-cloud", async (event, filePath, options = {}) => {
+      const { requestId } = options;
+      const controller = requestId ? this._registerUploadController(requestId) : null;
       try {
         const apiUrl = getApiUrl();
         if (!apiUrl) throw new Error("OpenWhispr API URL not configured");
@@ -6424,6 +6491,7 @@ class IPCHandlers {
             authHeader,
             multipartFields,
             onProgress: (payload) => event.sender.send("upload-transcription-progress", payload),
+            signal: controller?.signal,
           });
           return { success: true, text, ...(warning ? { warning } : {}) };
         }
@@ -6440,16 +6508,21 @@ class IPCHandlers {
           multipartFields
         );
         const url = new URL(`${apiUrl}/api/transcribe`);
-        const data = await postMultipart(url, body, boundary, authHeader);
+        const data = await postMultipart(url, body, boundary, authHeader, {
+          signal: controller?.signal,
+        });
         const result = interpretTranscribeResponse(data);
 
         return { success: true, text: result.text };
       } catch (error) {
+        if (error.name === "AbortError") return { success: false, code: "CANCELLED" };
         debugLogger.error("Cloud audio file transcription error", { error: error.message });
         if (error.code) {
           return { success: false, error: error.message, code: error.code, ...error };
         }
         return { success: false, error: error.message };
+      } finally {
+        if (requestId) this._uploadTranscriptionControllers.delete(requestId);
       }
     });
 
@@ -6457,10 +6530,11 @@ class IPCHandlers {
       "transcribe-audio-file-byok",
       async (
         event,
-        { filePath, apiKey, baseUrl, model, provider, language, environment, tenant }
+        { filePath, apiKey, baseUrl, model, provider, language, environment, tenant, requestId }
       ) => {
         const fs = require("fs");
         const BYOK_FILE_SIZE_LIMIT = 25 * 1024 * 1024; // 25 MB
+        let controller = null;
         try {
           const fileSize = fs.statSync(filePath).size;
           if (fileSize > BYOK_FILE_SIZE_LIMIT) {
@@ -6469,6 +6543,9 @@ class IPCHandlers {
               error: "File too large. Maximum size for bring-your-own-key is 25 MB.",
             };
           }
+
+          // Register after the size guard so the rejected path leaks no entry.
+          if (requestId) controller = this._registerUploadController(requestId);
 
           if (provider === "corti") {
             const clientId = this.environmentManager.getCortiClientId();
@@ -6484,6 +6561,7 @@ class IPCHandlers {
               clientSecret,
               audioBuffer: fs.readFileSync(filePath),
               language: language || "en",
+              signal: controller?.signal,
             });
             return { success: true, text };
           }
@@ -6523,9 +6601,13 @@ class IPCHandlers {
           );
 
           const url = new URL(transcriptionUrl);
-          const data = await postMultipart(url, body, boundary, {
-            Authorization: `Bearer ${apiKey}`,
-          });
+          const data = await postMultipart(
+            url,
+            body,
+            boundary,
+            { Authorization: `Bearer ${apiKey}` },
+            { signal: controller?.signal }
+          );
 
           if (data.statusCode === 401) {
             return { success: false, error: "Invalid API key. Check your key in Settings." };
@@ -6541,8 +6623,11 @@ class IPCHandlers {
 
           return { success: true, text: data.data.text };
         } catch (error) {
+          if (error.name === "AbortError") return { success: false, code: "CANCELLED" };
           debugLogger.error("BYOK audio file transcription error", { error: error.message });
           return { success: false, error: error.message };
+        } finally {
+          if (requestId) this._uploadTranscriptionControllers.delete(requestId);
         }
       }
     );

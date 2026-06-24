@@ -11,6 +11,7 @@ const {
 } = require("./ffmpegUtils");
 const { getSafeTempDir } = require("./safeTempDir");
 const ParakeetWsServer = require("./parakeetWsServer");
+const { createAbortError } = require("./abortError");
 
 const SAMPLE_RATE = 16000;
 const BYTES_PER_SAMPLE = 4; // float32
@@ -21,6 +22,13 @@ const SILENCE_RMS_THRESHOLD = 0.001;
 class ParakeetServerManager {
   constructor() {
     this.wsServer = new ParakeetWsServer();
+    // Counts in-flight high-level transcriptions (one per call, even across the
+    // segment loop) so a cancel knows whether killing the shared server is safe.
+    this._inFlight = 0;
+  }
+
+  inFlightCount() {
+    return this._inFlight;
   }
 
   getBinaryPath() {
@@ -83,7 +91,8 @@ class ParakeetServerManager {
   }
 
   async transcribe(audioBuffer, options = {}) {
-    const { modelName = "parakeet-tdt-0.6b-v3" } = options;
+    const { modelName = "parakeet-tdt-0.6b-v3", signal } = options;
+    if (signal?.aborted) throw createAbortError();
 
     const modelDir = path.join(this.getModelsDir(), modelName);
     if (!this.isModelDownloaded(modelName)) {
@@ -96,59 +105,65 @@ class ParakeetServerManager {
       isWavFormat: isWavFormat(audioBuffer),
     });
 
-    const { wavBuffer, filesToCleanup } = await this._ensureWav(audioBuffer);
+    this._inFlight++;
     try {
-      if (!this.wsServer.ready || this.wsServer.modelName !== modelName) {
-        await this.wsServer.start(modelName, modelDir);
-      }
-
-      const samples = wavToFloat32Samples(wavBuffer);
-      const durationSeconds = samples.length / BYTES_PER_SAMPLE / SAMPLE_RATE;
-
-      const rms = computeFloat32RMS(samples);
-      debugLogger.debug("Parakeet audio analysis", { durationSeconds, rms });
-      if (rms < SILENCE_RMS_THRESHOLD) {
-        return { text: "", elapsed: 0 };
-      }
-
-      if (samples.length <= MAX_SEGMENT_BYTES) {
-        const result = await this.wsServer.transcribe(samples, SAMPLE_RATE);
-        if (!result.text?.trim()) {
-          debugLogger.warn("Parakeet returned empty text for non-silent audio", {
-            durationSeconds,
-            rms,
-            samplesBytes: samples.length,
-          });
+      const { wavBuffer, filesToCleanup } = await this._ensureWav(audioBuffer);
+      try {
+        if (!this.wsServer.ready || this.wsServer.modelName !== modelName) {
+          await this.wsServer.start(modelName, modelDir);
         }
-        return result;
-      }
 
-      debugLogger.debug("Parakeet segmenting long audio", {
-        durationSeconds,
-        segmentCount: Math.ceil(samples.length / MAX_SEGMENT_BYTES),
-      });
+        const samples = wavToFloat32Samples(wavBuffer);
+        const durationSeconds = samples.length / BYTES_PER_SAMPLE / SAMPLE_RATE;
 
-      const texts = [];
-      let totalElapsed = 0;
-
-      for (let offset = 0; offset < samples.length; offset += MAX_SEGMENT_BYTES) {
-        const end = Math.min(offset + MAX_SEGMENT_BYTES, samples.length);
-        const segment = samples.subarray(offset, end);
-        const result = await this.wsServer.transcribe(segment, SAMPLE_RATE);
-        totalElapsed += result.elapsed || 0;
-        if (result.text) {
-          texts.push(result.text);
-        } else {
-          debugLogger.warn("Parakeet segment returned empty text", {
-            segmentIndex: offset / MAX_SEGMENT_BYTES,
-            segmentDuration: segment.length / BYTES_PER_SAMPLE / SAMPLE_RATE,
-          });
+        const rms = computeFloat32RMS(samples);
+        debugLogger.debug("Parakeet audio analysis", { durationSeconds, rms });
+        if (rms < SILENCE_RMS_THRESHOLD) {
+          return { text: "", elapsed: 0 };
         }
-      }
 
-      return { text: texts.join(" "), elapsed: totalElapsed };
+        if (samples.length <= MAX_SEGMENT_BYTES) {
+          const result = await this.wsServer.transcribe(samples, SAMPLE_RATE, { signal });
+          if (!result.text?.trim()) {
+            debugLogger.warn("Parakeet returned empty text for non-silent audio", {
+              durationSeconds,
+              rms,
+              samplesBytes: samples.length,
+            });
+          }
+          return result;
+        }
+
+        debugLogger.debug("Parakeet segmenting long audio", {
+          durationSeconds,
+          segmentCount: Math.ceil(samples.length / MAX_SEGMENT_BYTES),
+        });
+
+        const texts = [];
+        let totalElapsed = 0;
+
+        for (let offset = 0; offset < samples.length; offset += MAX_SEGMENT_BYTES) {
+          if (signal?.aborted) throw createAbortError();
+          const end = Math.min(offset + MAX_SEGMENT_BYTES, samples.length);
+          const segment = samples.subarray(offset, end);
+          const result = await this.wsServer.transcribe(segment, SAMPLE_RATE, { signal });
+          totalElapsed += result.elapsed || 0;
+          if (result.text) {
+            texts.push(result.text);
+          } else {
+            debugLogger.warn("Parakeet segment returned empty text", {
+              segmentIndex: offset / MAX_SEGMENT_BYTES,
+              segmentDuration: segment.length / BYTES_PER_SAMPLE / SAMPLE_RATE,
+            });
+          }
+        }
+
+        return { text: texts.join(" "), elapsed: totalElapsed };
+      } finally {
+        this._cleanupFiles(filesToCleanup);
+      }
     } finally {
-      this._cleanupFiles(filesToCleanup);
+      this._inFlight--;
     }
   }
 

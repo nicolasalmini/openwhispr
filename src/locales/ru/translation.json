@@ -2105,7 +2105,12 @@
       "switchToCloudForLargeFiles": "Переключитесь на OpenWhispr Cloud, чтобы транскрибировать этот файл.",
       "createAccount": "Создать аккаунт",
       "upgrade": "Обновить",
-      "switchToCloud": "OpenWhispr Cloud"
+      "switchToCloud": "OpenWhispr Cloud",
+      "cancelRestartTitle": "Перезапустить локальный сервер модели?",
+      "cancelRestartBody": "Отмена локальной транскрипции перезапускает сервер модели. Это займёт несколько секунд.",
+      "cancelRestartProceed": "Продолжить",
+      "keepTranscribing": "Продолжить транскрипцию",
+      "restartingServer": "Перезапуск локального сервера модели…"
     },
     "meeting": {
       "title": "Заметки со встреч",

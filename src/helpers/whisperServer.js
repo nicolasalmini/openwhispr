@@ -10,6 +10,7 @@ const { killProcess } = require("../utils/process");
 const { isPortAvailable } = require("../utils/serverUtils");
 const { getSafeTempDir } = require("./safeTempDir");
 const { convertToWav } = require("./ffmpegUtils");
+const { createAbortError } = require("./abortError");
 const sidecarPidFile = require("./sidecarPidFile");
 const { sanitizeWhisperVadConfig, DEFAULT_WHISPER_VAD_CONFIG } = require("./whisperVadConfig");
 
@@ -176,6 +177,7 @@ class WhisperServerManager extends EventEmitter {
     this.useCuda = false;
     this.vadSignature = "vad:off";
     this.threadSignature = "threads:default";
+    this._inFlight = 0;
   }
 
   getFFmpegPath() {
@@ -622,10 +624,28 @@ class WhisperServerManager extends EventEmitter {
     }
   }
 
+  inFlightCount() {
+    return this._inFlight;
+  }
+
+  // Counted by the caller (WhisperManager.transcribeViaServer) so a job is
+  // tracked across both start() and transcribe(); lets a sole-consumer cancel
+  // see this upload even while the server is still cold-starting.
+  beginJob() {
+    this._inFlight++;
+  }
+
+  endJob() {
+    this._inFlight--;
+  }
+
   async transcribe(audioBuffer, options = {}) {
     if (!this.ready || (!this.process && !this.isRemote)) {
       throw new Error("whisper-server is not running");
     }
+
+    const { language, initialPrompt, signal } = options;
+    if (signal?.aborted) throw createAbortError();
 
     // Debug: Log audio buffer info
     debugLogger.debug("whisper-server transcribe called", {
@@ -638,8 +658,6 @@ class WhisperServerManager extends EventEmitter {
               .join(" ")
           : "too short",
     });
-
-    const { language, initialPrompt } = options;
 
     // Always convert to 16kHz mono WAV - whisper.cpp requires this exact format
     let finalBuffer = audioBuffer;
@@ -688,6 +706,12 @@ class WhisperServerManager extends EventEmitter {
     const body = Buffer.concat(bodyParts);
 
     return new Promise((resolve, reject) => {
+      // Audio conversion above is not abortable, so re-check before dispatching.
+      if (signal?.aborted) {
+        reject(createAbortError());
+        return;
+      }
+
       const startTime = Date.now();
 
       const req = http.request(
@@ -736,6 +760,20 @@ class WhisperServerManager extends EventEmitter {
         req.destroy();
         reject(new Error("whisper-server request timed out"));
       });
+
+      // Soft-cancel: drop our socket so the request rejects immediately. The
+      // native inference keeps running (whisper-server has no cancel endpoint)
+      // until the upload-cancel path kills the server when it is sole consumer.
+      if (signal) {
+        signal.addEventListener(
+          "abort",
+          () => {
+            req.destroy();
+            reject(createAbortError());
+          },
+          { once: true }
+        );
+      }
 
       req.write(body);
       req.end();

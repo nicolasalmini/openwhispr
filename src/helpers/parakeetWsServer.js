@@ -11,6 +11,7 @@ const {
 } = require("../utils/serverUtils");
 const { getSafeTempDir } = require("./safeTempDir");
 const sidecarPidFile = require("./sidecarPidFile");
+const { createAbortError } = require("./abortError");
 
 const PORT_RANGE_START = 6006;
 const PORT_RANGE_END = 6029;
@@ -205,21 +206,43 @@ class ParakeetWsServer {
     }
   }
 
-  transcribe(samplesBuffer, sampleRate) {
+  transcribe(samplesBuffer, sampleRate, options = {}) {
     if (!this.ready || !this.process) {
       throw new Error("parakeet-ws server is not running");
     }
+
+    const { signal } = options;
+    if (signal?.aborted) throw createAbortError();
 
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
       let result = "";
 
+      const cleanup = () => {
+        clearTimeout(timeout);
+        if (signal) signal.removeEventListener("abort", onAbort);
+      };
+
       const timeout = setTimeout(() => {
+        cleanup();
         try {
           ws.close();
         } catch {}
         reject(new Error("parakeet-ws transcription timed out"));
       }, TRANSCRIPTION_TIMEOUT_MS);
+
+      // Soft-cancel: drop the socket so this segment rejects immediately. The
+      // sherpa worker keeps running until the upload-cancel path kills the
+      // server when it is sole consumer. cleanup() removes the abort listener on
+      // every settle path so it can't accumulate across the segment loop.
+      const onAbort = () => {
+        cleanup();
+        try {
+          ws.close();
+        } catch {}
+        reject(createAbortError());
+      };
+      if (signal) signal.addEventListener("abort", onAbort, { once: true });
 
       const ws = new WebSocket(`ws://127.0.0.1:${this.port}`);
 
@@ -249,7 +272,7 @@ class ParakeetWsServer {
       });
 
       ws.on("close", (code) => {
-        clearTimeout(timeout);
+        cleanup();
         const elapsed = Date.now() - startTime;
 
         debugLogger.debug("parakeet-ws transcription completed", {
@@ -268,7 +291,7 @@ class ParakeetWsServer {
       });
 
       ws.on("error", (error) => {
-        clearTimeout(timeout);
+        cleanup();
         reject(new Error(`parakeet-ws transcription failed: ${error.message}`));
       });
     });

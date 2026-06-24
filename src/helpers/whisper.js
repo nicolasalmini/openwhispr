@@ -282,6 +282,7 @@ class WhisperManager {
     return await this.transcribeViaServer(audioBlob, model, language, initialPrompt, {
       vadEnabled,
       vadConfig,
+      signal: options.signal,
     });
   }
 
@@ -295,51 +296,66 @@ class WhisperManager {
       debugLogger.warn("VAD requested but ggml-silero model not found; running without VAD");
     }
 
-    await this.serverManager.start(modelPath, {
-      useCuda: this.serverManager.useCuda,
-      vadEnabled,
-      vadModelPath,
-      vadConfig: options.vadConfig || null,
-    });
-    this.currentServerModel = model;
+    // Count the whole job (start + inference) as one in-flight consumer of the
+    // shared server, so an upload cancel only kills it when truly sole consumer.
+    this.serverManager.beginJob();
+    try {
+      await this.serverManager.start(modelPath, {
+        useCuda: this.serverManager.useCuda,
+        vadEnabled,
+        vadModelPath,
+        vadConfig: options.vadConfig || null,
+      });
+      this.currentServerModel = model;
 
-    // Convert audioBlob to Buffer if needed
-    let audioBuffer;
-    if (Buffer.isBuffer(audioBlob)) {
-      audioBuffer = audioBlob;
-    } else if (ArrayBuffer.isView(audioBlob)) {
-      audioBuffer = Buffer.from(audioBlob.buffer, audioBlob.byteOffset, audioBlob.byteLength);
-    } else if (audioBlob instanceof ArrayBuffer) {
-      audioBuffer = Buffer.from(audioBlob);
-    } else if (typeof audioBlob === "string") {
-      audioBuffer = Buffer.from(audioBlob, "base64");
-    } else if (audioBlob && audioBlob.buffer && typeof audioBlob.byteLength === "number") {
-      audioBuffer = Buffer.from(audioBlob.buffer, audioBlob.byteOffset || 0, audioBlob.byteLength);
-    } else {
-      throw new Error(`Unsupported audio data type: ${typeof audioBlob}`);
+      // Convert audioBlob to Buffer if needed
+      let audioBuffer;
+      if (Buffer.isBuffer(audioBlob)) {
+        audioBuffer = audioBlob;
+      } else if (ArrayBuffer.isView(audioBlob)) {
+        audioBuffer = Buffer.from(audioBlob.buffer, audioBlob.byteOffset, audioBlob.byteLength);
+      } else if (audioBlob instanceof ArrayBuffer) {
+        audioBuffer = Buffer.from(audioBlob);
+      } else if (typeof audioBlob === "string") {
+        audioBuffer = Buffer.from(audioBlob, "base64");
+      } else if (audioBlob && audioBlob.buffer && typeof audioBlob.byteLength === "number") {
+        audioBuffer = Buffer.from(
+          audioBlob.buffer,
+          audioBlob.byteOffset || 0,
+          audioBlob.byteLength
+        );
+      } else {
+        throw new Error(`Unsupported audio data type: ${typeof audioBlob}`);
+      }
+
+      if (!audioBuffer || audioBuffer.length === 0) {
+        throw new Error("Audio buffer is empty - no audio data received");
+      }
+
+      debugLogger.logWhisperPipeline("transcribeViaServer - sending to server", {
+        bufferSize: audioBuffer.length,
+        model,
+        language,
+        port: this.serverManager.port,
+      });
+
+      const startTime = Date.now();
+      const result = await this.serverManager.transcribe(audioBuffer, {
+        language,
+        initialPrompt,
+        signal: options.signal,
+      });
+      const elapsed = Date.now() - startTime;
+
+      debugLogger.logWhisperPipeline("transcribeViaServer - completed", {
+        elapsed,
+        resultKeys: Object.keys(result),
+      });
+
+      return this.parseWhisperResult(result);
+    } finally {
+      this.serverManager.endJob();
     }
-
-    if (!audioBuffer || audioBuffer.length === 0) {
-      throw new Error("Audio buffer is empty - no audio data received");
-    }
-
-    debugLogger.logWhisperPipeline("transcribeViaServer - sending to server", {
-      bufferSize: audioBuffer.length,
-      model,
-      language,
-      port: this.serverManager.port,
-    });
-
-    const startTime = Date.now();
-    const result = await this.serverManager.transcribe(audioBuffer, { language, initialPrompt });
-    const elapsed = Date.now() - startTime;
-
-    debugLogger.logWhisperPipeline("transcribeViaServer - completed", {
-      elapsed,
-      resultKeys: Object.keys(result),
-    });
-
-    return this.parseWhisperResult(result);
   }
 
   async transcribeViaLan(audioBlob, url, options = {}) {

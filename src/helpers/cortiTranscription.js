@@ -33,8 +33,9 @@ async function transcribeAudio({
   clientSecret,
   audioBuffer,
   language,
+  signal,
 }) {
-  const token = await getCortiToken({ environment, tenant, clientId, clientSecret });
+  const token = await getCortiToken({ environment, tenant, clientId, clientSecret, signal });
   const base = `https://api.${environment}.corti.app/v2`;
 
   debugLogger.debug(
@@ -53,6 +54,7 @@ async function transcribeAudio({
         type: "consultation",
       },
     }),
+    signal,
   });
 
   try {
@@ -64,6 +66,7 @@ async function transcribeAudio({
         method: "POST",
         headers: { "Content-Type": "application/octet-stream" },
         body: Buffer.from(audioBuffer),
+        signal,
       }
     );
 
@@ -75,13 +78,15 @@ async function transcribeAudio({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ recordingId, primaryLanguage: language, isDictation: true }),
+        signal,
       }
     );
 
     return { text: (transcript.transcripts || []).map((utterance) => utterance.text).join(" ") };
   } finally {
     // Dictation audio must not persist on Corti's servers — deleting the
-    // interaction cascades to its recordings and transcripts.
+    // interaction cascades to its recordings and transcripts. Intentionally
+    // unsignaled so a user cancel still purges the server-side audio.
     request(token, tenant, `${base}/interactions/${interactionId}`, { method: "DELETE" }).catch(
       (error) =>
         debugLogger.error(

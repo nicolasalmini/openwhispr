@@ -1,6 +1,15 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Upload, FileAudio, X, AlertCircle, FolderOpen, Plus, Settings } from "lucide-react";
+import {
+  Upload,
+  FileAudio,
+  X,
+  AlertCircle,
+  FolderOpen,
+  Plus,
+  Settings,
+  Loader2,
+} from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "../ui/button";
 import { cn } from "../lib/utils";
@@ -12,8 +21,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  ConfirmDialog,
+} from "../ui/dialog";
 import { Input } from "../ui/input";
+import { useDialogs } from "../../hooks/useDialogs";
 import type { FolderItem } from "../../types/electron";
 import { findDefaultFolder, MEETINGS_FOLDER_NAME } from "./shared";
 import { useAuth } from "../../hooks/useAuth";
@@ -71,6 +88,9 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
   } | null>(null);
   const progressCleanupRef = useRef<(() => void) | null>(null);
   const runIdRef = useRef(0);
+  const activeRequestIdRef = useRef<string | null>(null);
+  const [restartingServer, setRestartingServer] = useState(false);
+  const { confirmDialog, showConfirmDialog, hideConfirmDialog } = useDialogs();
 
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string>("");
@@ -305,11 +325,34 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
     setError(null);
     setProgress(0);
     setChunkProgress(null);
+    setRestartingServer(false);
     const personal = findDefaultFolder(folders);
     if (personal) setSelectedFolderId(String(personal.id));
   };
 
+  // Local transcriptions run on a shared model server that has no cancel
+  // endpoint, so cancelling restarts it — guard that behind a confirmation and
+  // a brief "restarting" state. Cloud/BYOK aborts are instant and free.
+  const confirmLocalCancel = async () => {
+    runIdRef.current++;
+    setRestartingServer(true);
+    await window.electronAPI.cancelUploadTranscription?.(activeRequestIdRef.current ?? "");
+    setRestartingServer(false);
+    reset();
+  };
+
   const cancelTranscription = () => {
+    if (useLocalWhisper) {
+      showConfirmDialog({
+        title: t("notes.upload.cancelRestartTitle"),
+        description: t("notes.upload.cancelRestartBody"),
+        confirmText: t("notes.upload.cancelRestartProceed"),
+        cancelText: t("notes.upload.keepTranscribing"),
+        onConfirm: confirmLocalCancel,
+      });
+      return;
+    }
+    window.electronAPI.cancelUploadTranscription?.(activeRequestIdRef.current ?? "");
     runIdRef.current++;
     reset();
   };
@@ -317,10 +360,13 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
   const handleTranscribe = async () => {
     if (!file) return;
     const runId = ++runIdRef.current;
+    const requestId = crypto.randomUUID();
+    activeRequestIdRef.current = requestId;
     setState("transcribing");
     setError(null);
     setProgress(0);
     setChunkProgress(null);
+    setRestartingServer(false);
 
     const useChunkProgress = isOpenWhisprCloud && isLargeFile;
 
@@ -352,7 +398,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
 
       if (isOpenWhisprCloud) {
         res = await withSessionRefresh(async () => {
-          const r = await window.electronAPI.transcribeAudioFileCloud!(file.path);
+          const r = await window.electronAPI.transcribeAudioFileCloud!(file.path, { requestId });
           if (!r.success && r.code) {
             throw Object.assign(new Error(r.error || "Cloud transcription failed"), {
               code: r.code,
@@ -364,6 +410,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
         res = await window.electronAPI.transcribeAudioFile(file.path, {
           provider: localTranscriptionProvider as "whisper" | "nvidia",
           model: localTranscriptionProvider === "nvidia" ? parakeetModel : whisperModel,
+          requestId,
         });
       } else {
         res = await window.electronAPI.transcribeAudioFileByok!({
@@ -375,6 +422,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
           language: getBaseLanguageCode(preferredLanguage) || "en",
           environment: cortiEnvironment,
           tenant: cortiTenant,
+          requestId,
         });
       }
 
@@ -406,6 +454,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
           null,
           folderId
         );
+        if (runId !== runIdRef.current) return;
         if (noteRes.success && noteRes.note) setNoteId(noteRes.note.id);
         setState("complete");
       } else {
@@ -519,6 +568,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
               file={file}
               chunkProgress={chunkProgress}
               onCancel={cancelTranscription}
+              restartingServer={restartingServer}
             />
           )}
 
@@ -576,6 +626,16 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onOpenChange={hideConfirmDialog}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        onConfirm={confirmDialog.onConfirm}
+      />
     </div>
   );
 }
@@ -907,6 +967,7 @@ interface TranscribingViewProps {
   file: { name: string; path: string; size: string; sizeBytes: number } | null;
   chunkProgress: { chunksTotal: number; chunksCompleted: number } | null;
   onCancel: () => void;
+  restartingServer: boolean;
 }
 
 function TranscribingView({
@@ -916,8 +977,23 @@ function TranscribingView({
   file,
   chunkProgress,
   onCancel,
+  restartingServer,
 }: TranscribingViewProps) {
   const hasChunkInfo = chunkProgress !== null && chunkProgress.chunksTotal > 0;
+
+  if (restartingServer) {
+    return (
+      <div
+        className="flex flex-col items-center py-4"
+        style={{ animation: "float-up 0.3s ease-out" }}
+      >
+        <Loader2 size={20} className="text-primary/50 animate-spin mb-3" />
+        <p className="text-xs text-foreground/50 font-medium">
+          {t("notes.upload.restartingServer")}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-center" style={{ animation: "float-up 0.3s ease-out" }}>

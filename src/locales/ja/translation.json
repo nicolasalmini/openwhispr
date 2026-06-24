@@ -2088,7 +2088,12 @@
       "switchToCloudForLargeFiles": "このファイルを文字起こしするには OpenWhispr Cloud に切り替えてください。",
       "createAccount": "アカウント作成",
       "upgrade": "アップグレード",
-      "switchToCloud": "OpenWhispr Cloud"
+      "switchToCloud": "OpenWhispr Cloud",
+      "cancelRestartTitle": "ローカルモデルサーバーを再起動しますか？",
+      "cancelRestartBody": "ローカル文字起こしをキャンセルするとモデルサーバーが再起動します。数秒かかります。",
+      "cancelRestartProceed": "続行",
+      "keepTranscribing": "文字起こしを続ける",
+      "restartingServer": "ローカルモデルサーバーを再起動しています…"
     },
     "meeting": {
       "title": "議事録",
