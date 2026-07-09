@@ -75,6 +75,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
     fromUrl?: boolean;
   } | null>(null);
   const [result, setResult] = useState<string | null>(null);
+  const [partialWarning, setPartialWarning] = useState(false);
   const [noteId, setNoteId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -391,6 +392,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
     setState("idle");
     setFile(null);
     setResult(null);
+    setPartialWarning(false);
     setNoteId(null);
     setError(null);
     setProgress(0);
@@ -456,7 +458,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
             }).catch(() => null)
           : null;
 
-      let res: { success: boolean; text?: string; error?: string; code?: string; diarized?: boolean };
+      let res: { success: boolean; text?: string; error?: string; code?: string; diarized?: boolean; warning?: string };
 
       if (isOpenWhisprCloud) {
         res = await withSessionRefresh(async () => {
@@ -496,6 +498,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
       if (res.success && res.text) {
         setProgress(100);
         setResult(res.text);
+        setPartialWarning(!!res.warning);
 
         let title: string;
         if (currentFile.fromUrl) {
@@ -1019,6 +1022,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
             <CompleteView
               t={t}
               result={result}
+              partialWarning={partialWarning}
               folders={folders}
               selectedFolderId={selectedFolderId}
               handleFolderChange={handleFolderChange}
@@ -1574,6 +1578,7 @@ function TranscribingView({
 interface CompleteViewProps {
   t: (key: string) => string;
   result: string;
+  partialWarning: boolean;
   folders: FolderItem[];
   selectedFolderId: string;
   handleFolderChange: (val: string) => void;
@@ -1585,6 +1590,7 @@ interface CompleteViewProps {
 function CompleteView({
   t,
   result,
+  partialWarning,
   folders,
   selectedFolderId,
   handleFolderChange,
@@ -1638,6 +1644,12 @@ function CompleteView({
       <p className="text-xs text-foreground/25 max-w-[240px] text-center line-clamp-2 mb-4">
         {result.slice(0, 150)}
       </p>
+
+      {partialWarning && (
+        <p className="text-xs text-destructive/50 max-w-[240px] text-center mb-4 -mt-2">
+          {t("notes.upload.partialWarning")}
+        </p>
+      )}
 
       {folders.length > 0 && (
         <div className="flex items-center justify-center gap-2 mb-4">
