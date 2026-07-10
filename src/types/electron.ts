@@ -510,6 +510,8 @@ declare global {
         dictation: { mode: string };
         notes: { mode: string };
         streamingProvider: string;
+        managed?: boolean;
+        collectLocalUsage?: boolean;
       } | null>;
 
       getNoteRecordingConfig?: () => Promise<{
@@ -1140,7 +1142,13 @@ declare global {
       // OpenWhispr Cloud API
       cloudTranscribe?: (
         audioBuffer: ArrayBuffer,
-        opts: { language?: string; prompt?: string; useCase?: string; diarization?: boolean }
+        opts: {
+          language?: string;
+          prompt?: string;
+          useCase?: string;
+          diarization?: boolean;
+          durationSeconds?: number;
+        }
       ) => Promise<{
         success: boolean;
         text?: string;
@@ -1186,6 +1194,8 @@ declare global {
           audioSizeBytes?: number;
           audioFormat?: string;
           clientTotalMs?: number;
+          feature?: "dictation" | "meeting" | "upload";
+          clientEventId?: string;
         }
       ) => Promise<{
         success: boolean;
