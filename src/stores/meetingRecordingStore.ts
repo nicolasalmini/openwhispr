@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { getSettings, selectResolvedMeetingTranscription } from "./settingsStore";
 import { useStreamingProvidersStore } from "./streamingProvidersStore";
 import { isBuiltInMicrophone } from "../utils/audioDeviceUtils";
+import { resolveMicDeviceSelection } from "../helpers/micDeviceSelection";
 import { getBaseLanguageCode } from "../utils/languageSupport";
 import type { SystemAudioAccessResult, SystemAudioStrategy } from "../types/electron";
 import {
@@ -295,7 +296,7 @@ export const primeMeetingWorklet = () => {
 };
 
 const getMeetingMicConstraints = async (): Promise<MediaStreamConstraints> => {
-  const { preferBuiltInMic, selectedMicDeviceId } = getSettings();
+  const { preferBuiltInMic, selectedMicDeviceId, selectedMicDeviceLabel } = getSettings();
 
   if (preferBuiltInMic) {
     try {
@@ -322,9 +323,49 @@ const getMeetingMicConstraints = async (): Promise<MediaStreamConstraints> => {
   }
 
   if (selectedMicDeviceId && selectedMicDeviceId !== "default") {
+    let resolvedDeviceId = selectedMicDeviceId;
+
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const resolvedSelection = resolveMicDeviceSelection(
+        devices,
+        selectedMicDeviceId,
+        selectedMicDeviceLabel
+      );
+
+      if (resolvedSelection.device) {
+        resolvedDeviceId = resolvedSelection.device.deviceId;
+        if (
+          resolvedSelection.status === "remapped" ||
+          (!selectedMicDeviceLabel && resolvedSelection.device.label)
+        ) {
+          getSettings().setSelectedMicDevice(
+            resolvedSelection.device.deviceId,
+            resolvedSelection.device.label
+          );
+          logger.info(
+            resolvedSelection.status === "remapped"
+              ? "Restored selected meeting microphone after its device ID changed"
+              : "Saved selected meeting microphone label for future recovery",
+            {
+              deviceId: resolvedSelection.device.deviceId,
+              label: resolvedSelection.device.label,
+            },
+            "meeting"
+          );
+        }
+      }
+    } catch (err) {
+      logger.debug(
+        "Failed to reconcile selected microphone for meeting transcription",
+        { error: (err as Error).message },
+        "meeting"
+      );
+    }
+
     return {
       audio: {
-        deviceId: { exact: selectedMicDeviceId },
+        deviceId: { exact: resolvedDeviceId },
         ...MEETING_MIC_PRIMARY_AUDIO_CONSTRAINTS,
       },
     };

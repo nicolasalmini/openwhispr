@@ -15,6 +15,7 @@ import {
   recordLocalSpeechWindow,
 } from "./localSpeechGate";
 import { reacquireIfDead } from "./micTrackHealth";
+import { resolveMicDeviceSelection } from "./micDeviceSelection";
 import { isStaleDeviceError } from "./staleMicDevice";
 import { shouldSaveDiscardedRecording } from "./discardedRecording";
 import {
@@ -212,6 +213,7 @@ class AudioManager {
     // Otherwise wake-after-idle keeps requesting a stale deviceId that yields silence.
     this._onDeviceChange = () => {
       this.cachedMicDeviceId = null;
+      this.validatedSelectedMicDeviceId = null;
       this.micDriverWarmedUp = false;
     };
     navigator.mediaDevices?.addEventListener?.("devicechange", this._onDeviceChange);
@@ -232,6 +234,7 @@ class AudioManager {
     this.streamingTextResolve = null;
     this.streamingTextDebounce = null;
     this.cachedMicDeviceId = null;
+    this.validatedSelectedMicDeviceId = null;
     this.persistentAudioContext = null;
     this.workletModuleLoaded = false;
     this.workletBlobUrl = null;
@@ -352,8 +355,11 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
   }
 
   async getAudioConstraints(forceDefaultMic = false) {
-    const { preferBuiltInMic: preferBuiltIn, selectedMicDeviceId: selectedDeviceId } =
-      getSettings();
+    const {
+      preferBuiltInMic: preferBuiltIn,
+      selectedMicDeviceId: selectedDeviceId,
+      selectedMicDeviceLabel: selectedDeviceLabel,
+    } = getSettings();
 
     // All browser audio processing disabled to avoid OS-level side-effects.
     // AGC off: Chromium's AGC on Windows mutates the system mic volume via WASAPI (#476).
@@ -407,8 +413,59 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
     }
 
     if (!preferBuiltIn && selectedDeviceId) {
-      logger.debug("Using selected microphone", { deviceId: selectedDeviceId }, "audio");
-      return { audio: { deviceId: { exact: selectedDeviceId }, ...noProcessing } };
+      let resolvedDeviceId = selectedDeviceId;
+
+      if (this.validatedSelectedMicDeviceId !== selectedDeviceId) {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const resolvedSelection = resolveMicDeviceSelection(
+            devices,
+            selectedDeviceId,
+            selectedDeviceLabel
+          );
+
+          if (resolvedSelection.device) {
+            resolvedDeviceId = resolvedSelection.device.deviceId;
+            this.validatedSelectedMicDeviceId = resolvedDeviceId;
+
+            if (
+              resolvedSelection.status === "remapped" ||
+              (!selectedDeviceLabel && resolvedSelection.device.label)
+            ) {
+              getSettings().setSelectedMicDevice(
+                resolvedSelection.device.deviceId,
+                resolvedSelection.device.label
+              );
+              logger.info(
+                resolvedSelection.status === "remapped"
+                  ? "Restored selected microphone after its device ID changed"
+                  : "Saved selected microphone label for future recovery",
+                {
+                  deviceId: resolvedSelection.device.deviceId,
+                  label: resolvedSelection.device.label,
+                },
+                "audio"
+              );
+            }
+          } else {
+            // Avoid enumerating on every recording while the saved device is
+            // unplugged. A devicechange event clears this cache when it returns.
+            const labelsAreAvailable = devices.some(
+              (device) => device.kind === "audioinput" && device.label
+            );
+            this.validatedSelectedMicDeviceId = labelsAreAvailable ? selectedDeviceId : null;
+          }
+        } catch (error) {
+          logger.debug(
+            "Failed to reconcile selected microphone",
+            { error: error.message },
+            "audio"
+          );
+        }
+      }
+
+      logger.debug("Using selected microphone", { deviceId: resolvedDeviceId }, "audio");
+      return { audio: { deviceId: { exact: resolvedDeviceId }, ...noProcessing } };
     }
 
     logger.debug("Using default microphone", {}, "audio");
