@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { transcribeFile } from "../services/fileTranscription";
-import type { FileTranscriptionConfig } from "../services/fileTranscription";
+import { transcribeFileWithSpeakers } from "../services/fileTranscription";
+import type { FileTranscriptionConfig, DiarizationSettings } from "../services/fileTranscription";
+import { DOWNLOAD_ERROR_KEYS } from "../components/notes/shared";
 
 export type QueueItemStatus =
   | "queued"
@@ -29,26 +30,7 @@ export interface TranscribeOptions {
   // Returns an i18n key under notes.upload.* when the file exceeds the
   // mode-aware size limit, null when acceptable.
   validateSize?: (sizeBytes: number) => string | null;
-}
-
-export interface DiarizationOptions {
-  enabled: boolean;
-  numSpeakers: number | null;
-}
-
-export function computeByokDiarize(opts: {
-  diarizationEnabled: boolean;
-  useLocalWhisper: boolean;
-  isOpenWhisprCloud: boolean;
-  cloudTranscriptionProvider: string;
-}): boolean {
-  return (
-    opts.diarizationEnabled &&
-    !opts.useLocalWhisper &&
-    !opts.isOpenWhisprCloud &&
-    (opts.cloudTranscriptionProvider === "openai" ||
-      opts.cloudTranscriptionProvider === "mistral")
-  );
+  generateTitle?: (text: string) => Promise<string | null>;
 }
 
 export function useBatchQueue() {
@@ -57,11 +39,17 @@ export function useBatchQueue() {
   const [currentItemId, setCurrentItemId] = useState<string | null>(null);
   const processingRef = useRef(false);
   const cancelledRef = useRef(false);
+  // Source of truth for the drain loop: updated synchronously so items added the
+  // instant an item finishes are never missed.
   const queueRef = useRef<QueueItem[]>([]);
 
-  useEffect(() => {
-    queueRef.current = queue;
-  }, [queue]);
+  const applyQueue = useCallback(
+    (updater: (prev: QueueItem[]) => QueueItem[]) => {
+      queueRef.current = updater(queueRef.current);
+      setQueue(queueRef.current);
+    },
+    []
+  );
 
   const addFiles = useCallback(
     (files: Array<{ name: string; path: string; sizeBytes: number }>) => {
@@ -74,60 +62,66 @@ export function useBatchQueue() {
         status: "queued" as const,
         progress: 0,
       }));
-      setQueue((prev) => [...prev, ...items]);
+      applyQueue((prev) => [...prev, ...items]);
       return items;
     },
-    []
+    [applyQueue]
   );
 
-  const addUrls = useCallback((urls: string[]) => {
-    const items: QueueItem[] = urls.map((url) => ({
-      id: crypto.randomUUID(),
-      source: "url" as const,
-      name: url,
-      path: "",
-      url,
-      sizeBytes: 0,
-      status: "queued" as const,
-      progress: 0,
-    }));
-    setQueue((prev) => [...prev, ...items]);
-    return items;
-  }, []);
+  const addUrls = useCallback(
+    (urls: string[]) => {
+      const items: QueueItem[] = urls.map((url) => ({
+        id: crypto.randomUUID(),
+        source: "url" as const,
+        name: url,
+        path: "",
+        url,
+        sizeBytes: 0,
+        status: "queued" as const,
+        progress: 0,
+      }));
+      applyQueue((prev) => [...prev, ...items]);
+      return items;
+    },
+    [applyQueue]
+  );
 
-  const removeItem = useCallback((id: string) => {
-    setQueue((prev) => prev.filter((item) => item.id !== id));
-  }, []);
+  const removeItem = useCallback(
+    (id: string) => {
+      applyQueue((prev) => prev.filter((item) => item.id !== id));
+    },
+    [applyQueue]
+  );
 
-  const updateItem = useCallback((id: string, updates: Partial<QueueItem>) => {
-    setQueue((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
-    );
-  }, []);
+  const updateItem = useCallback(
+    (id: string, updates: Partial<QueueItem>) => {
+      applyQueue((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
+      );
+    },
+    [applyQueue]
+  );
 
   const cancelAll = useCallback(() => {
     cancelledRef.current = true;
     window.electronAPI.cancelUrlDownload();
-    setQueue((prev) =>
+    applyQueue((prev) =>
       prev.map((item) =>
         item.status === "queued"
           ? { ...item, status: "error" as const, error: "batchCancelled" }
           : item
       )
     );
-  }, []);
+  }, [applyQueue]);
 
   const clearQueue = useCallback(() => {
     cancelledRef.current = true;
-    setQueue([]);
+    applyQueue(() => []);
     setCurrentItemId(null);
-  }, []);
+  }, [applyQueue]);
 
   const processQueue = useCallback(
-    async (
-      transcribeOpts: TranscribeOptions,
-      diarizationOpts: DiarizationOptions
-    ) => {
+    async (transcribeOpts: TranscribeOptions, diarization: DiarizationSettings) => {
       if (processingRef.current) return;
       processingRef.current = true;
       cancelledRef.current = false;
@@ -139,12 +133,17 @@ export function useBatchQueue() {
         getApiKey: () => snapshotApiKey,
       };
 
+      const cancelItem = (id: string) => {
+        updateItem(id, { status: "error", error: "batchCancelled" });
+      };
+
       const processItem = async (item: QueueItem) => {
         setCurrentItemId(item.id);
         let filePath = item.path;
         let tempPath: string | undefined;
         let noteName = item.name;
         let sizeBytes = item.sizeBytes;
+        let durationSeconds: number | null = null;
 
         try {
           if (item.source === "url" && item.url) {
@@ -152,6 +151,7 @@ export function useBatchQueue() {
 
             const cleanupProgress =
               window.electronAPI.onUrlDownloadProgress?.((data) => {
+                if (data.downloadId && data.downloadId !== item.id) return;
                 updateItem(item.id, {
                   progress: data.percent,
                   name: data.title || item.name,
@@ -159,16 +159,21 @@ export function useBatchQueue() {
               });
 
             try {
-              const res = await window.electronAPI.downloadUrlAudio(item.url);
+              const res = await window.electronAPI.downloadUrlAudio(item.url, item.id);
               if (!res.success) {
-                const fail = res as { success: false; error: string };
-                updateItem(item.id, { status: "error", error: fail.error });
+                const fail = res as { success: false; error: string; code?: string };
+                const key =
+                  fail.code === "DOWNLOAD_CANCELLED"
+                    ? "batchCancelled"
+                    : DOWNLOAD_ERROR_KEYS[fail.code || ""];
+                updateItem(item.id, { status: "error", error: key || fail.error });
                 return;
               }
               filePath = res.tempPath;
               tempPath = res.tempPath;
               noteName = res.title || item.name;
               sizeBytes = res.sizeBytes;
+              durationSeconds = res.durationSeconds;
               updateItem(item.id, {
                 path: res.tempPath,
                 tempPath: res.tempPath,
@@ -180,7 +185,10 @@ export function useBatchQueue() {
             }
           }
 
-          if (cancelledRef.current) return;
+          if (cancelledRef.current) {
+            cancelItem(item.id);
+            return;
+          }
 
           const sizeError = transcribeOpts.validateSize?.(sizeBytes) ?? null;
           if (sizeError) {
@@ -190,54 +198,48 @@ export function useBatchQueue() {
 
           updateItem(item.id, { status: "transcribing", progress: 0 });
 
-          const byokUseDiarize = computeByokDiarize({
-            diarizationEnabled: diarizationOpts.enabled,
-            useLocalWhisper: transcription.useLocalWhisper,
-            isOpenWhisprCloud: transcription.isOpenWhisprCloud,
-            cloudTranscriptionProvider: transcription.cloudTranscriptionProvider,
-          });
+          const transcriptionResult = await transcribeFileWithSpeakers(
+            filePath,
+            transcription,
+            diarization,
+            durationSeconds
+          );
 
-          const transcribePromise = transcribeFile(filePath, transcription, byokUseDiarize);
-
-          const diarizePromise = diarizationOpts.enabled && filePath && !byokUseDiarize
-            ? window.electronAPI.diarizeAudioFile?.(filePath, {
-                numSpeakers: diarizationOpts.numSpeakers ?? undefined,
-              }).catch(() => null)
-            : Promise.resolve(null);
-
-          const [transcriptionResult, diarResult] = await Promise.all([
-            transcribePromise,
-            diarizePromise,
-          ]);
+          if (cancelledRef.current) {
+            cancelItem(item.id);
+            return;
+          }
 
           if (!transcriptionResult.success || !transcriptionResult.text) {
             updateItem(item.id, {
               status: "error",
-              error: transcriptionResult.error || "batchTranscriptionFailed",
+              error:
+                transcriptionResult.code === "NO_SPEECH_DETECTED"
+                  ? "noSpeechDetected"
+                  : transcriptionResult.error || "batchTranscriptionFailed",
             });
             return;
           }
 
-          let finalText = transcriptionResult.text;
+          const finalText = transcriptionResult.text;
 
-          if ("diarized" in transcriptionResult && transcriptionResult.diarized) {
-            // Cloud diarization already applied
-          } else if (diarResult?.success && diarResult.segments && diarResult.segments.length > 0) {
-            try {
-              const duration = diarResult.segments[diarResult.segments.length - 1]?.end || 0;
-              const mergeResult = await window.electronAPI.mergeSpeakerText?.(
-                diarResult.segments, finalText, duration
-              );
-              if (mergeResult?.success && mergeResult.text) {
-                finalText = mergeResult.text;
-              }
-            } catch {
-              // Merge failed, save without speaker labels
+          // URL notes keep the video title; file notes get the same generated
+          // titles as the single-file flow.
+          let noteTitle = noteName;
+          if (item.source === "file") {
+            const words = finalText.trim().split(/\s+/);
+            const fallback =
+              words.slice(0, 6).join(" ") + (words.length > 6 ? "..." : "") ||
+              noteName.replace(/\.[^.]+$/, "");
+            noteTitle = (await transcribeOpts.generateTitle?.(finalText)) || fallback;
+            if (cancelledRef.current) {
+              cancelItem(item.id);
+              return;
             }
           }
 
           const noteRes = await window.electronAPI.saveNote(
-            noteName,
+            noteTitle,
             finalText,
             "upload",
             noteName,
@@ -294,6 +296,7 @@ export function useBatchQueue() {
   }, []);
 
   const completedCount = queue.filter((i) => i.status === "done").length;
+  const failedCount = queue.filter((i) => i.status === "error").length;
   const totalCount = queue.length;
   const hasQueue = queue.length > 0;
 
@@ -303,6 +306,7 @@ export function useBatchQueue() {
     currentItemId,
     hasQueue,
     completedCount,
+    failedCount,
     totalCount,
     addFiles,
     addUrls,

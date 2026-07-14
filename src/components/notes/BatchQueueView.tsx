@@ -7,6 +7,7 @@ import type { QueueItem } from "../../hooks/useBatchQueue";
 interface BatchQueueViewProps {
   queue: QueueItem[];
   completedCount: number;
+  failedCount: number;
   totalCount: number;
   isProcessing: boolean;
   onRemoveItem: (id: string) => void;
@@ -31,6 +32,7 @@ function StatusIcon({ status }: { status: QueueItem["status"] }) {
 export default function BatchQueueView({
   queue,
   completedCount,
+  failedCount,
   totalCount,
   isProcessing,
   onRemoveItem,
@@ -42,8 +44,9 @@ export default function BatchQueueView({
   const allDone = queue.length > 0 && queue.every(
     (i) => i.status === "done" || i.status === "error"
   );
+  // Failed items still count as settled so the bar reaches 100% when the run ends.
   const overallProgress =
-    totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+    totalCount > 0 ? Math.round(((completedCount + failedCount) / totalCount) * 100) : 0;
 
   return (
     <div style={{ animation: "float-up 0.3s ease-out" }}>
@@ -54,6 +57,12 @@ export default function BatchQueueView({
               completed: completedCount,
               total: totalCount,
             })}
+            {failedCount > 0 && (
+              <span className="text-destructive/50 font-normal">
+                {" · "}
+                {t("notes.upload.queueFailed", { n: failedCount })}
+              </span>
+            )}
           </p>
           {allDone && (
             <Button

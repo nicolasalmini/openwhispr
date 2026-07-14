@@ -2305,7 +2305,12 @@
       "batchSaveFailed": "Échec de l'enregistrement de la note",
       "batchUnknownError": "Erreur inconnue",
       "removeFromQueue": "Retirer de la file",
-      "diarizationRunsLocally": "La détection des locuteurs s'exécute localement sur votre appareil."
+      "diarizationRunsLocally": "La détection des locuteurs s'exécute localement sur votre appareil.",
+      "urlSubmit": "Ajouter le lien",
+      "urlsSkipped": "Certains liens n'ont pas pu être ajoutés ({{n}})",
+      "queueFailed": "{{n}} en échec",
+      "urlFileTooLarge": "Le fichier est trop volumineux pour être téléchargé. La taille maximale est de 500 Mo.",
+      "urlYoutubeBlocked": "YouTube bloque temporairement les téléchargements depuis votre réseau. Réessayez dans un moment."
     },
     "meeting": {
       "title": "Notes de réunion",

@@ -2242,7 +2242,12 @@
       "batchSaveFailed": "Error al guardar la nota",
       "batchUnknownError": "Error desconocido",
       "removeFromQueue": "Eliminar de la cola",
-      "diarizationRunsLocally": "La detección de hablantes se ejecuta localmente en tu dispositivo."
+      "diarizationRunsLocally": "La detección de hablantes se ejecuta localmente en tu dispositivo.",
+      "urlSubmit": "Añadir enlace",
+      "urlsSkipped": "Algunos enlaces no se pudieron añadir ({{n}})",
+      "queueFailed": "{{n}} con error",
+      "urlFileTooLarge": "El archivo es demasiado grande para descargar. El tamaño máximo es 500 MB.",
+      "urlYoutubeBlocked": "YouTube está bloqueando temporalmente las descargas desde tu red. Inténtalo de nuevo más tarde."
     },
     "meeting": {
       "title": "Notas de reunión",

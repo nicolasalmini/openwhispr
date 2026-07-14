@@ -1209,7 +1209,12 @@
           "annualEquivalent": "$16.67",
           "includesPrefix": "所有 Pro 功能 +",
           "badge": "最受欢迎",
-          "features": ["无限会议录制", "代理模式", "与您的数据对话", "优先支持"],
+          "features": [
+            "无限会议录制",
+            "代理模式",
+            "与您的数据对话",
+            "优先支持"
+          ],
           "cta": "开始使用",
           "switchToAnnual": "切换为年付"
         },
@@ -2189,7 +2194,12 @@
       "batchSaveFailed": "保存笔记失败",
       "batchUnknownError": "未知错误",
       "removeFromQueue": "从队列中移除",
-      "diarizationRunsLocally": "说话人检测在您的设备上本地运行。"
+      "diarizationRunsLocally": "说话人检测在您的设备上本地运行。",
+      "urlSubmit": "添加链接",
+      "urlsSkipped": "部分链接无法添加（{{n}} 个）",
+      "queueFailed": "{{n}} 个失败",
+      "urlFileTooLarge": "文件过大，无法下载。最大大小为 500 MB。",
+      "urlYoutubeBlocked": "YouTube 暂时阻止了来自您网络的下载。请稍后重试。"
     },
     "meeting": {
       "title": "会议笔记",

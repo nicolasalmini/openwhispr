@@ -2194,7 +2194,12 @@
       "batchSaveFailed": "Salvataggio nota non riuscito",
       "batchUnknownError": "Errore sconosciuto",
       "removeFromQueue": "Rimuovi dalla coda",
-      "diarizationRunsLocally": "Il rilevamento parlanti viene eseguito localmente sul tuo dispositivo."
+      "diarizationRunsLocally": "Il rilevamento parlanti viene eseguito localmente sul tuo dispositivo.",
+      "urlSubmit": "Aggiungi link",
+      "urlsSkipped": "Alcuni link non sono stati aggiunti ({{n}})",
+      "queueFailed": "{{n}} non riusciti",
+      "urlFileTooLarge": "Il file è troppo grande per essere scaricato. La dimensione massima è 500 MB.",
+      "urlYoutubeBlocked": "YouTube sta bloccando temporaneamente i download dalla tua rete. Riprova tra poco."
     },
     "meeting": {
       "title": "Note delle riunioni",

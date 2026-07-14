@@ -2393,7 +2393,12 @@
       "batchSaveFailed": "Failed to save note",
       "batchUnknownError": "Unknown error",
       "removeFromQueue": "Remove from queue",
-      "diarizationRunsLocally": "Speaker detection runs locally on your device."
+      "diarizationRunsLocally": "Speaker detection runs locally on your device.",
+      "urlSubmit": "Add link",
+      "urlsSkipped": "Some links couldn't be added ({{n}})",
+      "queueFailed": "{{n}} failed",
+      "urlFileTooLarge": "File is too large to download. The maximum size is 500 MB.",
+      "urlYoutubeBlocked": "YouTube is temporarily blocking downloads from your network. Try again in a little while."
     },
     "meeting": {
       "title": "Meeting Notes",

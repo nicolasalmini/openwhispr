@@ -2177,7 +2177,12 @@
       "batchSaveFailed": "ノートの保存に失敗しました",
       "batchUnknownError": "不明なエラー",
       "removeFromQueue": "キューから削除",
-      "diarizationRunsLocally": "話者検出はお使いのデバイス上でローカルに実行されます。"
+      "diarizationRunsLocally": "話者検出はお使いのデバイス上でローカルに実行されます。",
+      "urlSubmit": "リンクを追加",
+      "urlsSkipped": "追加できなかったリンクがあります（{{n}}件）",
+      "queueFailed": "{{n}}件失敗",
+      "urlFileTooLarge": "ファイルが大きすぎてダウンロードできません。最大サイズは500 MBです。",
+      "urlYoutubeBlocked": "YouTubeがお使いのネットワークからのダウンロードを一時的にブロックしています。しばらくしてからもう一度お試しください。"
     },
     "meeting": {
       "title": "議事録",

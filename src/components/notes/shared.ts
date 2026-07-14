@@ -9,6 +9,24 @@ export function findDefaultFolder(folders: FolderItem[]): FolderItem | undefined
   return folders.find((f) => f.name === DEFAULT_FOLDER_NAME && f.is_default);
 }
 
+// URL downloads route to "Videos" by name: a pre-existing user-created folder with
+// that name is used as-is (the migration never promotes or replaces it).
+export function findVideosFolder(folders: FolderItem[]): FolderItem | undefined {
+  return folders.find((f) => f.name === VIDEOS_FOLDER_NAME);
+}
+
+// URL-download error codes → notes.upload.* i18n keys.
+export const DOWNLOAD_ERROR_KEYS: Record<string, string> = {
+  INVALID_URL: "urlInvalid",
+  VIDEO_UNAVAILABLE: "urlVideoUnavailable",
+  PLAYLIST_URL: "urlPlaylistNotSupported",
+  CONTENT_TYPE_INVALID: "urlContentTypeInvalid",
+  DOWNLOAD_FAILED: "urlDownloadFailed",
+  FILE_TOO_LARGE: "urlFileTooLarge",
+  YOUTUBE_BLOCKED: "urlYoutubeBlocked",
+  SSRF_BLOCKED: "urlDownloadFailed",
+};
+
 export const notesInputClass = cn(
   "w-full h-8 px-3 rounded-md text-xs",
   "bg-foreground/3 dark:bg-white/4 border border-border/30 dark:border-white/6",

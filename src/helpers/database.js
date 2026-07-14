@@ -213,8 +213,10 @@ class DatabaseManager {
           .run(personalFolder.id);
       }
 
+      // A pre-existing user-created "Videos" folder stays untouched (never promoted
+      // to default); URL downloads route to it by name.
       const videosFolder = this.db
-        .prepare("SELECT id, is_default, sort_order FROM folders WHERE name = 'Videos'")
+        .prepare("SELECT id FROM folders WHERE name = 'Videos'")
         .get();
       if (!videosFolder) {
         const maxOrder = this.db
@@ -223,8 +225,6 @@ class DatabaseManager {
         this.db
           .prepare("INSERT OR IGNORE INTO folders (name, is_default, sort_order) VALUES ('Videos', 1, ?)")
           .run((maxOrder?.m ?? 1) + 1);
-      } else if (!videosFolder.is_default && videosFolder.sort_order === 2) {
-        this.db.prepare("UPDATE folders SET is_default = 1 WHERE id = ?").run(videosFolder.id);
       }
 
       this.db.exec(`

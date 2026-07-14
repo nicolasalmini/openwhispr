@@ -9,6 +9,13 @@ export interface FileTranscriptionResult {
   warning?: string;
 }
 
+export interface DiarizationSettings {
+  enabled: boolean;
+  // Local sherpa-onnx models present; BYOK-native diarization doesn't need them.
+  localModelsReady: boolean;
+  numSpeakers: number | null;
+}
+
 export interface FileTranscriptionConfig {
   useLocalWhisper: boolean;
   localTranscriptionProvider: string;
@@ -61,4 +68,58 @@ export async function transcribeFile(
     environment: cfg.cortiEnvironment,
     tenant: cfg.cortiTenant,
   });
+}
+
+// OpenAI/Mistral BYOK handle diarization inside the transcription call itself.
+export function shouldUseByokDiarize(
+  cfg: FileTranscriptionConfig,
+  diarizationEnabled: boolean
+): boolean {
+  return (
+    diarizationEnabled &&
+    !cfg.useLocalWhisper &&
+    !cfg.isOpenWhisprCloud &&
+    (cfg.cloudTranscriptionProvider === "openai" ||
+      cfg.cloudTranscriptionProvider === "mistral")
+  );
+}
+
+// Transcribe and diarize in parallel, then merge speaker labels into the text.
+// Shared by the single-file flow and the batch queue. `durationSeconds` (when the
+// source knows it, e.g. URL downloads) beats inferring duration from segments.
+export async function transcribeFileWithSpeakers(
+  filePath: string,
+  cfg: FileTranscriptionConfig,
+  diarization: DiarizationSettings,
+  durationSeconds?: number | null
+): Promise<FileTranscriptionResult> {
+  const byokDiarize = shouldUseByokDiarize(cfg, diarization.enabled);
+  const diarizePromise =
+    diarization.enabled && diarization.localModelsReady && !byokDiarize
+      ? window.electronAPI
+          .diarizeAudioFile?.(filePath, {
+            numSpeakers: diarization.numSpeakers ?? undefined,
+          })
+          .catch(() => null) ?? Promise.resolve(null)
+      : Promise.resolve(null);
+
+  const [result, diar] = await Promise.all([
+    transcribeFile(filePath, cfg, byokDiarize),
+    diarizePromise,
+  ]);
+
+  if (!result.success || !result.text || result.diarized) return result;
+  if (!diar?.success || !diar.segments?.length) return result;
+
+  try {
+    const merged = await window.electronAPI.mergeSpeakerText?.(
+      diar.segments,
+      result.text,
+      durationSeconds || 0
+    );
+    if (merged?.success && merged.text) return { ...result, text: merged.text };
+  } catch {
+    // Merge failure falls back to the plain transcript.
+  }
+  return result;
 }

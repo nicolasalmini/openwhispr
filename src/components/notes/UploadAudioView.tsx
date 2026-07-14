@@ -25,7 +25,12 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../ui/dialog";
 import { Input } from "../ui/input";
 import type { FolderItem } from "../../types/electron";
-import { findDefaultFolder, MEETINGS_FOLDER_NAME, VIDEOS_FOLDER_NAME } from "./shared";
+import {
+  findDefaultFolder,
+  findVideosFolder,
+  DOWNLOAD_ERROR_KEYS,
+  MEETINGS_FOLDER_NAME,
+} from "./shared";
 import { useAuth } from "../../hooks/useAuth";
 import { useUsage } from "../../hooks/useUsage";
 import { useSettings } from "../../hooks/useSettings";
@@ -37,12 +42,13 @@ import {
   selectResolvedUploadTranscription,
   getSettings,
 } from "../../stores/settingsStore";
-import { useBatchQueue, computeByokDiarize } from "../../hooks/useBatchQueue";
-import type { TranscribeOptions, DiarizationOptions } from "../../hooks/useBatchQueue";
-import { transcribeFile } from "../../services/fileTranscription";
+import { useBatchQueue } from "../../hooks/useBatchQueue";
+import type { TranscribeOptions } from "../../hooks/useBatchQueue";
+import { transcribeFileWithSpeakers, shouldUseByokDiarize } from "../../services/fileTranscription";
 import type {
   FileTranscriptionConfig,
   FileTranscriptionResult,
+  DiarizationSettings,
 } from "../../services/fileTranscription";
 import { MAX_SPEAKER_COUNT } from "../../constants/speakerDetection.json";
 import BatchQueueView from "./BatchQueueView";
@@ -57,10 +63,52 @@ const BYOK_MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB — hard limit for bring-y
 const CLOUD_FREE_MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB — free plan cloud limit
 const CLOUD_PRO_MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB — pro plan cloud limit
 
+const MAX_BATCH_URLS = 50;
+
+const uploadFieldClass = cn(
+  "rounded-lg text-xs",
+  "bg-surface-1/40 dark:bg-white/[0.03] backdrop-blur-sm",
+  "border border-foreground/6 dark:border-white/6",
+  "text-foreground/70 placeholder:text-foreground/20",
+  "focus:outline-none focus:border-foreground/12 dark:focus:border-white/10",
+  "transition-colors"
+);
+
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isYouTubeUrl(value: string): boolean {
+  try {
+    const host = new URL(value).hostname;
+    return host === "youtu.be" || host === "youtube.com" || host.endsWith(".youtube.com");
+  } catch {
+    return false;
+  }
+}
+
+function parseBatchUrls(text: string): { valid: string[]; skipped: number } {
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  const seen = new Set<string>();
+  const valid: string[] = [];
+  for (const line of lines) {
+    try {
+      const parsed = new URL(line);
+      if ((parsed.protocol === "http:" || parsed.protocol === "https:") && !seen.has(line)) {
+        seen.add(line);
+        valid.push(line);
+      }
+    } catch {
+      // invalid line, counted as skipped
+    }
+  }
+  const capped = valid.slice(0, MAX_BATCH_URLS);
+  return { valid: capped, skipped: lines.length - capped.length };
 }
 
 interface UploadAudioViewProps {
@@ -77,6 +125,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
     size: string;
     sizeBytes: number;
     fromUrl?: boolean;
+    durationSeconds?: number | null;
   } | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [partialWarning, setPartialWarning] = useState(false);
@@ -106,6 +155,8 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
     downloadedTempPathRef.current = downloadedTempPath;
   }, [downloadedTempPath]);
   const [urlExpanded, setUrlExpanded] = useState(false);
+  const [batchUrlNotice, setBatchUrlNotice] = useState<string | null>(null);
+  const singleDownloadIdRef = useRef<string | null>(null);
 
   const batch = useBatchQueue();
 
@@ -126,10 +177,33 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
     localStorage.setItem("uploadDiarizationNumSpeakers", diarizationNumSpeakers);
   }, [diarizationNumSpeakers]);
 
+  const diarizationDownloadRef = useRef(false);
+  const ensureDiarizationModels = async (): Promise<boolean> => {
+    if (diarizationDownloadRef.current) return false;
+    diarizationDownloadRef.current = true;
+    setDiarizationDownloading(true);
+    try {
+      await window.electronAPI.downloadDiarizationModels?.();
+      const status = await window.electronAPI.getDiarizationModelStatus?.();
+      const ready = status?.modelsDownloaded ?? false;
+      setDiarizationModelsReady(ready);
+      return ready;
+    } finally {
+      diarizationDownloadRef.current = false;
+      setDiarizationDownloading(false);
+    }
+  };
+
   useEffect(() => {
     window.electronAPI.getDiarizationModelStatus?.().then((status) => {
-      setDiarizationModelsReady(status?.modelsDownloaded ?? false);
+      const ready = status?.modelsDownloaded ?? false;
+      setDiarizationModelsReady(ready);
+      // Heal a persisted-on toggle whose models were removed since.
+      if (!ready && localStorage.getItem("uploadDiarizationEnabled") === "true") {
+        ensureDiarizationModels();
+      }
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const [folders, setFolders] = useState<FolderItem[]>([]);
@@ -385,7 +459,8 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
     const filePaths: string[] = res.filePaths || (res.filePath ? [res.filePath] : []);
     if (filePaths.length === 0) return;
 
-    if (filePaths.length === 1) {
+    // While a batch runs (or a queue exists), new files join the queue.
+    if (filePaths.length === 1 && !batch.isProcessing && !batch.hasQueue) {
       const fp = filePaths[0];
       const name = fp.split(/[/\\]/).pop() || "audio";
       const sizeBytes = (await window.electronAPI.getFileSize?.(fp)) ?? 0;
@@ -424,7 +499,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
 
     if (validFiles.length === 0) return;
 
-    if (validFiles.length === 1) {
+    if (validFiles.length === 1 && !batch.isProcessing && !batch.hasQueue) {
       const f = validFiles[0];
       setFile({ name: f.name, path: f.path, size: formatFileSize(f.sizeBytes), sizeBytes: f.sizeBytes });
       setState("selected");
@@ -462,7 +537,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
   };
 
   const handleTranscribe = async () => {
-    if (!file) return;
+    if (!file || batch.isProcessing) return;
     const currentFile = file;
     const currentTempPath = downloadedTempPath;
     const runId = ++runIdRef.current;
@@ -497,24 +572,15 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
     }
 
     try {
-      const byokUseDiarize = computeByokDiarize({
-        diarizationEnabled,
-        useLocalWhisper,
-        isOpenWhisprCloud,
-        cloudTranscriptionProvider,
-      });
-
-      const diarizePromise =
-        diarizationEnabled && diarizationModelsReady && !byokUseDiarize
-          ? window.electronAPI.diarizeAudioFile?.(currentFile.path, {
-              numSpeakers: diarizationNumSpeakers ? Number(diarizationNumSpeakers) : undefined,
-            }).catch(() => null)
-          : null;
-
-      const res: FileTranscriptionResult = await transcribeFile(
+      const res: FileTranscriptionResult = await transcribeFileWithSpeakers(
         currentFile.path,
         buildTranscriptionConfig(),
-        byokUseDiarize
+        {
+          enabled: diarizationEnabled,
+          localModelsReady: !!diarizationModelsReady,
+          numSpeakers: diarizationNumSpeakers ? Number(diarizationNumSpeakers) : null,
+        },
+        currentFile.durationSeconds
       );
 
       if (runId !== runIdRef.current) return;
@@ -542,31 +608,10 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
           title = aiTitle || fallbackTitle;
         }
 
-        let finalText = res.text;
-        if (res.diarized) {
-          // Cloud diarization already applied
-        } else if (diarizePromise) {
-          try {
-            const diarResult = await diarizePromise;
-            if (diarResult?.success && diarResult.segments && diarResult.segments.length > 0) {
-              const duration = diarResult.segments[diarResult.segments.length - 1]?.end || 0;
-              const mergeResult = await window.electronAPI.mergeSpeakerText?.(
-                diarResult.segments, finalText, duration
-              );
-              if (mergeResult?.success && mergeResult.text) {
-                finalText = mergeResult.text;
-              }
-            }
-          } catch {
-            // Diarization failed, save without speaker labels
-          }
-        }
-        if (runId !== runIdRef.current) return;
-
         const folderId = selectedFolderId ? Number(selectedFolderId) : null;
         const noteRes = await window.electronAPI.saveNote(
           title,
-          finalText,
+          res.text,
           "upload",
           currentFile.name,
           null,
@@ -600,17 +645,24 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
 
   const handleUrlSubmit = async () => {
     const trimmed = urlInput.trim();
-    if (!trimmed || batch.isProcessing) return;
+    if (!trimmed) return;
 
+    // While a batch runs (or a queue exists), submitted URLs join the queue.
+    if (batch.isProcessing || batch.hasQueue) {
+      handleBatchUrlSubmit();
+      return;
+    }
+
+    let parsed: URL;
     try {
-      new URL(trimmed);
+      parsed = new URL(trimmed);
     } catch {
       setError(t("notes.upload.urlInvalid"));
       setState("error");
       return;
     }
 
-    if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       setError(t("notes.upload.urlInvalid"));
       setState("error");
       return;
@@ -620,15 +672,16 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
     setError(null);
     setDownloadProgress({ stage: "resolving", percent: 0 });
 
-    const cleanupProgress = !batch.isProcessing
-      ? window.electronAPI.onUrlDownloadProgress?.((data) => {
-          setDownloadProgress(data);
-        })
-      : undefined;
+    const downloadId = crypto.randomUUID();
+    singleDownloadIdRef.current = downloadId;
+    const cleanupProgress = window.electronAPI.onUrlDownloadProgress?.((data) => {
+      if (data.downloadId && data.downloadId !== downloadId) return;
+      setDownloadProgress(data);
+    });
 
     urlDownloadActiveRef.current = true;
     try {
-      const res = await window.electronAPI.downloadUrlAudio(trimmed);
+      const res = await window.electronAPI.downloadUrlAudio(trimmed, downloadId);
 
       if (!mountedRef.current) {
         // Unmounted mid-download: nothing owns the temp file anymore, delete it.
@@ -638,21 +691,14 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
 
       if (!res.success) {
         const fail = res as { success: false; error: string; code?: string };
-        const errorMap: Record<string, string> = {
-          INVALID_URL: t("notes.upload.urlInvalid"),
-          VIDEO_UNAVAILABLE: t("notes.upload.urlVideoUnavailable"),
-          PLAYLIST_URL: t("notes.upload.urlPlaylistNotSupported"),
-          CONTENT_TYPE_INVALID: t("notes.upload.urlContentTypeInvalid"),
-          DOWNLOAD_FAILED: t("notes.upload.urlDownloadFailed"),
-          DOWNLOAD_CANCELLED: "",
-        };
-
         if (fail.code === "DOWNLOAD_CANCELLED") {
           setState("idle");
           return;
         }
-
-        setError(errorMap[fail.code || ""] || fail.error || t("notes.upload.urlDownloadFailed"));
+        const key = DOWNLOAD_ERROR_KEYS[fail.code || ""];
+        setError(
+          key ? t(`notes.upload.${key}`) : fail.error || t("notes.upload.urlDownloadFailed")
+        );
         setState("error");
         return;
       }
@@ -664,10 +710,9 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
         size: formatFileSize(res.sizeBytes),
         sizeBytes: res.sizeBytes,
         fromUrl: true,
+        durationSeconds: res.durationSeconds,
       });
-      const videosFolder = folders.find(
-        (f) => f.name === VIDEOS_FOLDER_NAME && f.is_default
-      );
+      const videosFolder = findVideosFolder(folders);
       if (videosFolder) setSelectedFolderId(String(videosFolder.id));
       setState("selected");
     } catch (e) {
@@ -675,59 +720,57 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
       setState("error");
     } finally {
       urlDownloadActiveRef.current = false;
+      singleDownloadIdRef.current = null;
       cleanupProgress?.();
       setDownloadProgress(null);
     }
   };
 
+  // Retry re-runs whatever failed: a selected file's transcription, or the URL download.
+  const handleRetry = () => {
+    if (file) {
+      handleTranscribe();
+    } else if (urlInput.trim()) {
+      handleUrlSubmit();
+    } else {
+      reset();
+    }
+  };
+
   const handleCancelDownload = () => {
-    window.electronAPI.cancelUrlDownload();
+    window.electronAPI.cancelUrlDownload(singleDownloadIdRef.current ?? undefined);
   };
 
   const handleBatchUrlSubmit = () => {
-    const lines = urlInput
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-
-    const seen = new Set<string>();
-    const validUrls: string[] = [];
-    for (const line of lines) {
-      try {
-        const parsed = new URL(line);
-        if ((parsed.protocol === "http:" || parsed.protocol === "https:") && !seen.has(line)) {
-          seen.add(line);
-          validUrls.push(line);
-        }
-      } catch {
-        // skip invalid
-      }
-    }
-
-    const MAX_BATCH_URLS = 50;
-    if (validUrls.length > 0) {
-      batch.addUrls(validUrls.slice(0, MAX_BATCH_URLS));
+    const { valid, skipped } = parseBatchUrls(urlInput);
+    if (valid.length > 0) {
+      batch.addUrls(valid);
       setUrlInput("");
       setUrlExpanded(false);
     }
+    setBatchUrlNotice(
+      skipped > 0 ? t("notes.upload.urlsSkipped", { n: skipped }) : null
+    );
   };
 
   const startBatchProcessing = () => {
-    if (state === "downloading") return;
-    const folderId = batchFolderId ? Number(batchFolderId) : null;
+    if (state === "downloading" || state === "transcribing") return;
+    setBatchUrlNotice(null);
 
     const transcribeOpts: TranscribeOptions = {
       transcription: buildTranscriptionConfig(),
-      folderId,
+      folderId: batchFolderId ? Number(batchFolderId) : null,
       validateSize: getBatchSizeErrorKey,
+      generateTitle: async (text) => (await generateTitle(text)) || null,
     };
 
-    const diarizationOpts: DiarizationOptions = {
-      enabled: diarizationEnabled && !!diarizationModelsReady,
+    const diarization: DiarizationSettings = {
+      enabled: diarizationEnabled,
+      localModelsReady: !!diarizationModelsReady,
       numSpeakers: diarizationNumSpeakers ? Number(diarizationNumSpeakers) : null,
     };
 
-    batch.processQueue(transcribeOpts, diarizationOpts);
+    batch.processQueue(transcribeOpts, diarization);
   };
 
   const handleCreateFolder = async () => {
@@ -808,14 +851,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
                     onChange={(e) => setUrlInput(e.target.value)}
                     placeholder={t("notes.upload.pasteUrls")}
                     rows={4}
-                    className={cn(
-                      "w-full px-3 py-2 rounded-lg text-xs resize-none",
-                      "bg-surface-1/40 dark:bg-white/[0.03] backdrop-blur-sm",
-                      "border border-foreground/6 dark:border-white/6",
-                      "text-foreground/70 placeholder:text-foreground/20",
-                      "focus:outline-none focus:border-foreground/12 dark:focus:border-white/10",
-                      "transition-colors"
-                    )}
+                    className={cn(uploadFieldClass, "w-full px-3 py-2 resize-none")}
                     autoFocus
                   />
                   <div className="flex items-center gap-2 mt-2 justify-end">
@@ -840,7 +876,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
                 </div>
               ) : (
                 <div className="relative">
-                  {(() => { try { const h = new URL(urlInput).hostname; return h === "youtu.be" || h.endsWith(".youtube.com") || h === "youtube.com"; } catch { return false; } })() ? (
+                  {isYouTubeUrl(urlInput) ? (
                     <svg viewBox="0 0 28 20" className="absolute left-2.5 top-1/2 -translate-y-1/2 w-[18px] h-[13px] z-10 pointer-events-none">
                       <rect width="28" height="20" rx="4" fill="#FF0000" />
                       <polygon points="11,4 11,16 21,10" fill="white" />
@@ -861,7 +897,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
                     value={urlInput}
                     onChange={(e) => setUrlInput(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && !batch.isProcessing) {
+                      if (e.key === "Enter") {
                         e.preventDefault();
                         handleUrlSubmit();
                       }
@@ -878,18 +914,12 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
                       }
                     }}
                     placeholder={t("notes.upload.urlPlaceholder")}
-                    className={cn(
-                      "w-full h-8 pl-8 pr-9 rounded-lg text-xs",
-                      "bg-surface-1/40 dark:bg-white/[0.03] backdrop-blur-sm",
-                      "border border-foreground/6 dark:border-white/6",
-                      "text-foreground/70 placeholder:text-foreground/20",
-                      "focus:outline-none focus:border-foreground/12 dark:focus:border-white/10",
-                      "transition-colors"
-                    )}
+                    className={cn(uploadFieldClass, "w-full h-8 pl-8 pr-9")}
                   />
                   <button
                     onClick={handleUrlSubmit}
-                    disabled={!urlInput.trim() || batch.isProcessing}
+                    disabled={!urlInput.trim()}
+                    aria-label={t("notes.upload.urlSubmit")}
                     className={cn(
                       "absolute right-px top-px bottom-px w-7 rounded-r-[7px] flex items-center justify-center transition-colors",
                       "border-l border-foreground/6 dark:border-white/6",
@@ -907,9 +937,13 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
 
           {batch.hasQueue && (
             <div className="mt-3">
+              {batchUrlNotice && (
+                <p className="text-[10px] text-amber-500/60 mb-2 text-center">{batchUrlNotice}</p>
+              )}
               <BatchQueueView
                 queue={batch.queue}
                 completedCount={batch.completedCount}
+                failedCount={batch.failedCount}
                 totalCount={batch.totalCount}
                 isProcessing={batch.isProcessing}
                 onRemoveItem={batch.removeItem}
@@ -921,36 +955,19 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
               {!batch.isProcessing && batch.queue.some((i) => i.status === "queued") && (
                 <div className="mt-3 space-y-2">
                   {folders.length > 0 && (
-                    <div className="flex items-center justify-center gap-2">
-                      <FolderOpen size={12} className="text-foreground/20 shrink-0" />
-                      <Select value={batchFolderId} onValueChange={setBatchFolderId}>
-                        <SelectTrigger className="h-7 w-44 text-xs rounded-lg px-2.5 [&>svg]:h-3 [&>svg]:w-3">
-                          <SelectValue placeholder={t("notes.upload.selectFolder")} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {folders.map((f) => {
-                            const isMeetings = f.name === MEETINGS_FOLDER_NAME && !!f.is_default;
-                            return (
-                              <SelectItem
-                                key={f.id}
-                                value={String(f.id)}
-                                disabled={isMeetings}
-                                className="text-xs py-1.5 pl-2.5 pr-7 rounded-md"
-                              >
-                                {f.name}
-                              </SelectItem>
-                            );
-                          })}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <FolderSelect
+                      t={t}
+                      folders={folders}
+                      value={batchFolderId}
+                      onChange={setBatchFolderId}
+                    />
                   )}
                   <div className="flex justify-center">
                     <Button
                       variant="default"
                       size="sm"
                       onClick={startBatchProcessing}
-                      disabled={state === "downloading"}
+                      disabled={state === "downloading" || state === "transcribing"}
                       className="h-8 text-xs px-5"
                     >
                       {t("notes.upload.transcribe")}
@@ -968,6 +985,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
               getActiveModelLabel={getActiveModelLabel}
               reset={reset}
               handleTranscribe={handleTranscribe}
+              transcribeDisabled={batch.isProcessing}
               requiresUpgrade={!!requiresUpgrade}
               fileTooLarge={fileTooLarge}
               isLargeFile={isLargeFile}
@@ -1064,7 +1082,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
           )}
 
           {state === "error" && error && (
-            <ErrorView t={t} error={error} reset={reset} handleTranscribe={handleTranscribe} />
+            <ErrorView t={t} error={error} reset={reset} onRetry={handleRetry} />
           )}
         </div>
 
@@ -1080,32 +1098,27 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
                 </p>
               </div>
               <button
+                role="switch"
+                aria-checked={diarizationEnabled}
+                aria-label={t("notes.upload.speakerDetection")}
                 onClick={async () => {
                   if (diarizationDownloading) return;
-                  if (diarizationEnabled) {
-                    setDiarizationEnabled(false);
-                    return;
-                  }
-                  if (!diarizationModelsReady) {
-                    setDiarizationDownloading(true);
-                    try {
-                      await window.electronAPI.downloadDiarizationModels?.();
-                      const status = await window.electronAPI.getDiarizationModelStatus?.();
-                      setDiarizationModelsReady(status?.modelsDownloaded ?? false);
-                      if (status?.modelsDownloaded) setDiarizationEnabled(true);
-                    } finally {
-                      setDiarizationDownloading(false);
+                  const next = !diarizationEnabled;
+                  setDiarizationEnabled(next);
+                  if (next && !diarizationModelsReady) {
+                    const ready = await ensureDiarizationModels();
+                    // BYOK-native diarization works without local models.
+                    if (!ready && !shouldUseByokDiarize(buildTranscriptionConfig(), true)) {
+                      setDiarizationEnabled(false);
                     }
-                    return;
                   }
-                  setDiarizationEnabled(true);
                 }}
                 className={cn(
                   "relative w-7 h-4 rounded-full transition-colors shrink-0",
-                  diarizationEnabled && diarizationModelsReady
-                    ? "bg-primary"
-                    : diarizationDownloading
-                      ? "bg-primary/50 animate-pulse"
+                  diarizationDownloading
+                    ? "bg-primary/50 animate-pulse"
+                    : diarizationEnabled
+                      ? "bg-primary"
                       : "bg-muted"
                 )}
                 disabled={diarizationDownloading}
@@ -1113,9 +1126,7 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
                 <div
                   className={cn(
                     "absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform",
-                    diarizationEnabled && diarizationModelsReady
-                      ? "translate-x-3"
-                      : ""
+                    diarizationEnabled ? "translate-x-3" : ""
                   )}
                 />
               </button>
@@ -1166,13 +1177,10 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
                     setDiarizationNumSpeakers(String(isNaN(n) ? "" : n));
                   }}
                   placeholder={t("notes.upload.numSpeakersPlaceholder")}
+                  aria-label={t("notes.upload.numSpeakersPlaceholder")}
                   className={cn(
-                    "w-full h-8 px-2.5 rounded-lg text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
-                    "bg-surface-1/40 dark:bg-white/[0.03]",
-                    "border border-foreground/6 dark:border-white/6",
-                    "text-foreground/70 placeholder:text-foreground/20",
-                    "focus:outline-none focus:border-foreground/12",
-                    "transition-colors"
+                    uploadFieldClass,
+                    "w-full h-8 px-2.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   )}
                 />
               </div>
@@ -1379,6 +1387,7 @@ interface SelectedViewProps {
   getActiveModelLabel: () => string;
   reset: () => void;
   handleTranscribe: () => void;
+  transcribeDisabled: boolean;
   requiresUpgrade: boolean;
   fileTooLarge: boolean;
   isLargeFile: boolean;
@@ -1397,6 +1406,7 @@ function SelectedView({
   getActiveModelLabel,
   reset,
   handleTranscribe,
+  transcribeDisabled,
   requiresUpgrade,
   fileTooLarge,
   isLargeFile,
@@ -1520,6 +1530,7 @@ function SelectedView({
             variant="default"
             size="sm"
             onClick={handleTranscribe}
+            disabled={transcribeDisabled}
             className="h-8 text-xs px-5"
           >
             {t("notes.upload.transcribe")}
@@ -1606,6 +1617,61 @@ function TranscribingView({
   );
 }
 
+interface FolderSelectProps {
+  t: (key: string) => string;
+  folders: FolderItem[];
+  value: string;
+  onChange: (val: string) => void;
+  includeCreateNew?: boolean;
+  className?: string;
+}
+
+function FolderSelect({ t, folders, value, onChange, includeCreateNew, className }: FolderSelectProps) {
+  return (
+    <div className={cn("flex items-center justify-center gap-2", className)}>
+      <FolderOpen size={12} className="text-foreground/20 shrink-0" />
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className="h-7 w-44 text-xs rounded-lg px-2.5 [&>svg]:h-3 [&>svg]:w-3">
+          <SelectValue placeholder={t("notes.upload.selectFolder")} />
+        </SelectTrigger>
+        <SelectContent>
+          {folders.map((f) => {
+            const isMeetings = f.name === MEETINGS_FOLDER_NAME && !!f.is_default;
+            return (
+              <SelectItem
+                key={f.id}
+                value={String(f.id)}
+                disabled={isMeetings}
+                className="text-xs py-1.5 pl-2.5 pr-7 rounded-md"
+              >
+                <span className="flex items-center gap-1.5">
+                  {f.name}
+                  {isMeetings && (
+                    <span className="text-[8px] uppercase tracking-wider text-foreground/25 font-medium">
+                      {t("notes.folders.soon")}
+                    </span>
+                  )}
+                </span>
+              </SelectItem>
+            );
+          })}
+          {includeCreateNew && (
+            <>
+              <SelectSeparator />
+              <SelectItem value="__create_new__" className="text-xs py-1.5 pl-2.5 pr-7 rounded-md">
+                <span className="flex items-center gap-1.5 text-primary/60">
+                  <Plus size={11} />
+                  {t("notes.upload.newFolder")}
+                </span>
+              </SelectItem>
+            </>
+          )}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 interface CompleteViewProps {
   t: (key: string) => string;
   result: string;
@@ -1683,43 +1749,14 @@ function CompleteView({
       )}
 
       {folders.length > 0 && (
-        <div className="flex items-center justify-center gap-2 mb-4">
-          <FolderOpen size={12} className="text-foreground/20 shrink-0" />
-          <Select value={selectedFolderId} onValueChange={handleFolderChange}>
-            <SelectTrigger className="h-7 w-44 text-xs rounded-lg px-2.5 [&>svg]:h-3 [&>svg]:w-3">
-              <SelectValue placeholder={t("notes.upload.selectFolder")} />
-            </SelectTrigger>
-            <SelectContent>
-              {folders.map((f) => {
-                const isMeetings = f.name === MEETINGS_FOLDER_NAME && !!f.is_default;
-                return (
-                  <SelectItem
-                    key={f.id}
-                    value={String(f.id)}
-                    disabled={isMeetings}
-                    className="text-xs py-1.5 pl-2.5 pr-7 rounded-md"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      {f.name}
-                      {isMeetings && (
-                        <span className="text-[8px] uppercase tracking-wider text-foreground/25 font-medium">
-                          {t("notes.folders.soon")}
-                        </span>
-                      )}
-                    </span>
-                  </SelectItem>
-                );
-              })}
-              <SelectSeparator />
-              <SelectItem value="__create_new__" className="text-xs py-1.5 pl-2.5 pr-7 rounded-md">
-                <span className="flex items-center gap-1.5 text-primary/60">
-                  <Plus size={11} />
-                  {t("notes.upload.newFolder")}
-                </span>
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <FolderSelect
+          t={t}
+          folders={folders}
+          value={selectedFolderId}
+          onChange={handleFolderChange}
+          includeCreateNew
+          className="mb-4"
+        />
       )}
 
       <div className="flex items-center gap-2">
@@ -1752,10 +1789,10 @@ interface ErrorViewProps {
   t: (key: string) => string;
   error: string;
   reset: () => void;
-  handleTranscribe: () => void;
+  onRetry: () => void;
 }
 
-function ErrorView({ t, error, reset, handleTranscribe }: ErrorViewProps) {
+function ErrorView({ t, error, reset, onRetry }: ErrorViewProps) {
   return (
     <div style={{ animation: "float-up 0.3s ease-out" }}>
       <div className="rounded-lg border border-destructive/15 dark:border-destructive/20 bg-destructive/[0.03] dark:bg-destructive/[0.05] backdrop-blur-sm p-4 mb-4">
@@ -1775,7 +1812,7 @@ function ErrorView({ t, error, reset, handleTranscribe }: ErrorViewProps) {
         <Button
           variant="ghost"
           size="sm"
-          onClick={handleTranscribe}
+          onClick={onRetry}
           className="h-7 text-xs text-foreground/40"
         >
           {t("notes.upload.retry")}

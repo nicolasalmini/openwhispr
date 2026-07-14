@@ -28,12 +28,15 @@ function mergeSpeakersWithText(segments, text, durationSeconds) {
     return [{ speaker: "speaker_0", text, start: 0, end: durationSeconds || 0 }];
   }
 
+  // Segments arrive in stdout order, not sorted — never assume the last one ends latest.
+  const maxSegmentEnd = segments.reduce((max, s) => Math.max(max, s.end || 0), 0);
+
   const sentences = splitIntoSentences(text);
   if (sentences.length === 0) {
-    return [{ speaker: segments[0].speaker, text, start: segments[0].start, end: segments[segments.length - 1].end }];
+    return [{ speaker: segments[0].speaker, text, start: segments[0].start, end: maxSegmentEnd }];
   }
 
-  const totalDuration = durationSeconds || segments.reduce((max, s) => Math.max(max, s.end || 0), 0) || 1;
+  const totalDuration = durationSeconds || maxSegmentEnd || 1;
   const totalChars = sentences.reduce((sum, s) => sum + s.length, 0);
 
   const assigned = [];
