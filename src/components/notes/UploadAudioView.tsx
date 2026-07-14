@@ -203,7 +203,6 @@ export default function UploadAudioView({ onNoteCreated, onOpenSettings }: Uploa
         ensureDiarizationModels();
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const [folders, setFolders] = useState<FolderItem[]>([]);
