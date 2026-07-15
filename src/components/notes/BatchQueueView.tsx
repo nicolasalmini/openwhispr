@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { AlertTriangle, Check, X, Loader2, Clock, Trash2 } from "lucide-react";
 import { Button } from "../ui/button";
 import { cn } from "../lib/utils";
-import type { QueueItem } from "../../hooks/useBatchQueue";
+import type { QueueItem } from "../../stores/batchQueueStore";
 
 interface BatchQueueViewProps {
   queue: QueueItem[];
@@ -114,9 +114,7 @@ export default function BatchQueueView({
               </span>
             )}
 
-            {/* Hidden while processing: opening a note unmounts this view, which
-                cancels the batch (queue state lives in useBatchQueue). */}
-            {item.status === "done" && item.noteId && onOpenNote && !isProcessing && (
+            {item.status === "done" && item.noteId && onOpenNote && (
               <button
                 onClick={() => onOpenNote(item.noteId!)}
                 className="text-[10px] text-primary/50 hover:text-primary/70"

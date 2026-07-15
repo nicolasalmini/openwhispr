@@ -42,8 +42,8 @@ import {
   selectResolvedUploadTranscription,
   getSettings,
 } from "../../stores/settingsStore";
-import { useBatchQueue } from "../../hooks/useBatchQueue";
-import type { TranscribeOptions } from "../../hooks/useBatchQueue";
+import { useBatchQueue } from "../../stores/batchQueueStore";
+import type { TranscribeOptions } from "../../stores/batchQueueStore";
 import { transcribeFileWithSpeakers, shouldUseByokDiarize } from "../../services/fileTranscription";
 import type {
   FileTranscriptionConfig,
