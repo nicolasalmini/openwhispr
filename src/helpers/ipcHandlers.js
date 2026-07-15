@@ -4309,8 +4309,7 @@ class IPCHandlers {
           });
           if (text) result = { text, source: "tinfoil", model };
         } else if (settings?.cloudTranscriptionProvider === "corti") {
-          // OAuth interaction flow — without this branch a Corti retry would fall
-          // into the generic else and post the audio to OpenAI.
+          // Corti uses OAuth client credentials — it cannot go through the generic HTTP branch.
           const clientId = this.environmentManager.getCortiClientId();
           const clientSecret = this.environmentManager.getCortiClientSecret();
           if (!clientId || !clientSecret) {

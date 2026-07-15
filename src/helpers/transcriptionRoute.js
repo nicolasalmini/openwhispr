@@ -9,7 +9,7 @@ import { resolveSelfHostedTranscriptionModel } from "./selfHostedTranscription.j
 export const BYOK_FILE_SIZE_LIMIT = 25 * 1024 * 1024;
 
 // xAI STT supports 25 languages; language must be in this set to enable ITN via format=true
-export const XAI_STT_LANGUAGES = new Set([
+const XAI_STT_LANGUAGES = new Set([
   "ar",
   "cs",
   "da",
