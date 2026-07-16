@@ -936,6 +936,25 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("gcal-get-upcoming-events", windowMinutes),
   gcalGetEvent: (eventId) => ipcRenderer.invoke("gcal-get-event", eventId),
 
+  // Notion integration
+  notionStartOAuth: () => ipcRenderer.invoke("notion-start-oauth"),
+  notionGetStatus: () => ipcRenderer.invoke("notion-get-status"),
+  notionDisconnect: () => ipcRenderer.invoke("notion-disconnect"),
+  notionSearchDataSources: (query) => ipcRenderer.invoke("notion-search-data-sources", query),
+  notionSaveDestination: (input) => ipcRenderer.invoke("notion-save-destination", input),
+  notionRefreshDestination: () => ipcRenderer.invoke("notion-refresh-destination"),
+  notionUpdateDestinationSettings: (settings) =>
+    ipcRenderer.invoke("notion-update-destination-settings", settings),
+  notionPreviewPublication: (noteId, options) =>
+    ipcRenderer.invoke("notion-preview-publication", noteId, options),
+  notionPublish: (noteId, options) => ipcRenderer.invoke("notion-publish", noteId, options),
+  notionGetPublicationStatus: (noteId) =>
+    ipcRenderer.invoke("notion-get-publication-status", noteId),
+  onNotionConnectionChanged: registerListener(
+    "notion-connection-changed",
+    (callback) => (_event, data) => callback(data)
+  ),
+
   // Contacts
   searchContacts: (query) => ipcRenderer.invoke("search-contacts", query),
   upsertContact: (contact) => ipcRenderer.invoke("upsert-contact", contact),

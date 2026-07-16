@@ -2650,7 +2650,8 @@
       "calendar": "Календарь",
       "api": "API",
       "mcp": "MCP",
-      "cli": "CLI"
+      "cli": "CLI",
+      "knowledge": "Знания и публикация"
     },
     "api": {
       "title": "API-ключи",
@@ -2705,6 +2706,48 @@
     "notABot": {
       "title": "OpenWhispr — это запись встреч, а не бот",
       "description": "OpenWhispr захватывает аудио напрямую из вашей системы — он никогда не присоединяется к встречам как участник. Просто подключите календарь и делайте заметки как обычно."
+    },
+    "notion": {
+      "connectedBadge": "Подключено",
+      "connectedWorkspaceFallback": "Подключённое рабочее пространство",
+      "description": "Публикуйте заметки и итоги встреч в источник данных Notion.",
+      "connect": "Подключить",
+      "disconnectAria": "Отключить Notion",
+      "browserToastTitle": "Завершите подключение в браузере",
+      "browserToastDescription": "Вернитесь сюда после предоставления OpenWhispr доступа к Notion.",
+      "connectFailedTitle": "Не удалось подключить Notion",
+      "connectFailedFallback": "Не удалось начать авторизацию Notion",
+      "connectionFailedTitle": "Ошибка подключения к Notion",
+      "destinationLabel": "Назначение",
+      "destinationEmpty": "Выберите, куда публиковать заметки",
+      "destinationChange": "Изменить",
+      "destinationChoose": "Выбрать",
+      "refreshAria": "Обновить схему назначения",
+      "destinationRefreshed": "Назначение Notion обновлено",
+      "refreshFailedTitle": "Не удалось обновить назначение",
+      "layoutLabel": "Макет страницы по умолчанию",
+      "layoutDescription": "Его можно изменить перед публикацией.",
+      "layoutGeneral": "Обычная заметка",
+      "layoutMeeting": "Встреча",
+      "transcriptLabel": "Включить расшифровку",
+      "transcriptDescription": "Добавляет расшифровку, если она доступна.",
+      "settingsUpdateFailedTitle": "Не удалось обновить настройки Notion",
+      "dialogTitle": "Выберите назначение Notion",
+      "dialogDescription": "Выберите источник данных, к которому предоставлен доступ OpenWhispr. Недавно открытые базы данных могут появиться не сразу.",
+      "searchPlaceholder": "Поиск источников данных",
+      "searchFailedTitle": "Не удалось загрузить назначения Notion",
+      "searchFailedFallback": "Не удалось загрузить источники данных Notion",
+      "searchEmpty": "Общие источники данных не найдены. Предоставьте доступ OpenWhispr и обновите список.",
+      "fallbackLabel": "Использовать URL или ID базы данных",
+      "fallbackPlaceholder": "Вставьте URL или ID базы данных Notion",
+      "fallbackSubmit": "Использовать",
+      "saveFailedTitle": "Не удалось сохранить назначение",
+      "saveFailedFallback": "Не удалось сохранить назначение Notion",
+      "destinationSaved": "Назначение Notion сохранено",
+      "disconnectTitle": "Отключить Notion?",
+      "disconnectDescription": "OpenWhispr удалит локально сохранённые учётные данные. Существующие страницы Notion не изменяются.",
+      "disconnectConfirm": "Отключить",
+      "disconnectFailedTitle": "Не удалось отключить Notion"
     }
   },
   "calendar": {
@@ -2799,6 +2842,37 @@
           "linkUnavailable": "Сгенерируйте или обновите ссылку, чтобы скопировать её"
         }
       }
+    },
+    "notion": {
+      "publishAria": "Опубликовать в Notion",
+      "publishedAria": "Открыть опубликованную страницу Notion",
+      "publishedTitle": "Опубликовано в Notion",
+      "dialogTitle": "Опубликовать в Notion",
+      "dialogDescription": "Создаёт новую страницу из этой заметки. OpenWhispr никогда не изменяет существующую страницу Notion.",
+      "noDestinationTitle": "Сначала выберите назначение",
+      "noDestinationDescription": "Подключите Notion и выберите источник данных в Настройки → Интеграции.",
+      "destinationLabel": "Назначение",
+      "layoutLabel": "Макет страницы",
+      "layoutGeneral": "Обычная заметка",
+      "layoutMeeting": "Встреча",
+      "contentLabel": "Содержимое",
+      "contentOriginal": "Исходные заметки",
+      "contentEnhanced": "Улучшенные заметки",
+      "staleEnhancedWarning": "Улучшенные заметки встречи недоступны или устарели. Сначала сгенерируйте заметки или опубликуйте исходные.",
+      "transcriptLabel": "Включить расшифровку",
+      "transcriptAvailable": "Добавляется в свёрнутом разделе.",
+      "transcriptUnavailable": "У этой заметки нет расшифровки.",
+      "previewLabel": "Примерный предпросмотр",
+      "previewBlocks": "Блоков: {{count}}",
+      "previewEmpty": "Нет содержимого",
+      "previewFailedFallback": "Не удалось построить предпросмотр Notion",
+      "duplicateNotice": "Точно такое содержимое уже опубликовано.",
+      "openExisting": "Открыть существующую страницу",
+      "publishAnother": "Опубликовать ещё одну копию",
+      "publish": "Опубликовать",
+      "publishFailedFallback": "Не удалось опубликовать в Notion",
+      "publishedToast": "Опубликовано в Notion",
+      "openInNotion": "Открыть в Notion"
     }
   },
   "commandSearch": {

@@ -49,6 +49,17 @@ Contacted only if the user connects Google Calendar in settings.
 | `www.googleapis.com`    | HTTPS    | 443  | Calendar event and calendar list reads.                     |
 | `openwhispr.com`        | HTTPS    | 443  | OAuth desktop callback redirect (`/auth/desktop-callback`). |
 
+## Required for Notion publishing (optional feature)
+
+Contacted only if the user connects Notion or publishes a note. OAuth token
+exchange, refresh, and revoke requests route through OpenWhispr Cloud so the
+Notion client secret never ships in the desktop app.
+
+| Host                 | Protocol | Port | Purpose                                                                                                         |
+| -------------------- | -------- | ---- | --------------------------------------------------------------------------------------------------------------- |
+| `api.openwhispr.com` | HTTPS    | 443  | Notion OAuth start, redemption, token refresh, and revoke broker.                                               |
+| `api.notion.com`     | HTTPS    | 443  | Data-source search, schema retrieval, page creation, block appends, and the browser authorization page (OAuth). |
+
 ## BYOK provider hosts (only if configured)
 
 Required only when a user configures their own API key for the corresponding
@@ -96,6 +107,9 @@ curl -v https://streaming.assemblyai.com/v3/token
 
 # Model downloads (only if local mode is in use)
 curl -v -I https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
+
+# Notion (only if the integration is in use; 401 confirms reachability)
+curl -v https://api.notion.com/v1/search
 ```
 
 If a request returns `Could not resolve host`, the DNS layer (resolver,

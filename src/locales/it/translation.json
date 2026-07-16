@@ -2646,7 +2646,8 @@
       "calendar": "Calendario",
       "api": "API",
       "mcp": "MCP",
-      "cli": "CLI"
+      "cli": "CLI",
+      "knowledge": "Conoscenza e pubblicazione"
     },
     "api": {
       "title": "Chiavi API",
@@ -2701,6 +2702,48 @@
     "notABot": {
       "title": "OpenWhispr è un registratore di riunioni, non un bot",
       "description": "OpenWhispr cattura l'audio direttamente dal tuo sistema — non entra mai nelle tue riunioni come partecipante. Basta collegare il calendario e prendere appunti normalmente."
+    },
+    "notion": {
+      "connectedBadge": "Connesso",
+      "connectedWorkspaceFallback": "Workspace connesso",
+      "description": "Pubblica note e riepiloghi delle riunioni in un'origine dati di Notion.",
+      "connect": "Connetti",
+      "disconnectAria": "Disconnetti Notion",
+      "browserToastTitle": "Completa la connessione nel browser",
+      "browserToastDescription": "Torna qui dopo aver concesso a OpenWhispr l'accesso a Notion.",
+      "connectFailedTitle": "Impossibile connettere Notion",
+      "connectFailedFallback": "Impossibile avviare l'autorizzazione di Notion",
+      "connectionFailedTitle": "Connessione a Notion non riuscita",
+      "destinationLabel": "Destinazione",
+      "destinationEmpty": "Scegli dove pubblicare le note",
+      "destinationChange": "Cambia",
+      "destinationChoose": "Scegli",
+      "refreshAria": "Aggiorna lo schema della destinazione",
+      "destinationRefreshed": "Destinazione Notion aggiornata",
+      "refreshFailedTitle": "Impossibile aggiornare la destinazione",
+      "layoutLabel": "Layout di pagina predefinito",
+      "layoutDescription": "Puoi modificarlo prima di pubblicare.",
+      "layoutGeneral": "Nota generale",
+      "layoutMeeting": "Riunione",
+      "transcriptLabel": "Includi trascrizione",
+      "transcriptDescription": "Aggiunge la trascrizione quando disponibile.",
+      "settingsUpdateFailedTitle": "Impossibile aggiornare le impostazioni di Notion",
+      "dialogTitle": "Scegli una destinazione Notion",
+      "dialogDescription": "Seleziona un'origine dati condivisa con OpenWhispr. I database appena condivisi possono impiegare un momento per apparire.",
+      "searchPlaceholder": "Cerca origini dati",
+      "searchFailedTitle": "Impossibile caricare le destinazioni Notion",
+      "searchFailedFallback": "Impossibile caricare le origini dati di Notion",
+      "searchEmpty": "Nessuna origine dati condivisa trovata. Condividine una con OpenWhispr, poi aggiorna.",
+      "fallbackLabel": "Usa un URL o ID di database",
+      "fallbackPlaceholder": "Incolla un URL o ID di database Notion",
+      "fallbackSubmit": "Usa",
+      "saveFailedTitle": "Impossibile salvare la destinazione",
+      "saveFailedFallback": "Impossibile salvare la destinazione Notion",
+      "destinationSaved": "Destinazione Notion salvata",
+      "disconnectTitle": "Disconnettere Notion?",
+      "disconnectDescription": "OpenWhispr rimuoverà le credenziali memorizzate localmente. Le pagine Notion esistenti non vengono modificate.",
+      "disconnectConfirm": "Disconnetti",
+      "disconnectFailedTitle": "Impossibile disconnettere Notion"
     }
   },
   "calendar": {
@@ -2795,6 +2838,37 @@
           "linkUnavailable": "Genera o ruota il link per copiarlo"
         }
       }
+    },
+    "notion": {
+      "publishAria": "Pubblica su Notion",
+      "publishedAria": "Apri la pagina Notion pubblicata",
+      "publishedTitle": "Pubblicato su Notion",
+      "dialogTitle": "Pubblica su Notion",
+      "dialogDescription": "Crea una nuova pagina da questa nota. OpenWhispr non modifica mai una pagina Notion esistente.",
+      "noDestinationTitle": "Scegli prima una destinazione",
+      "noDestinationDescription": "Connetti Notion e seleziona un'origine dati in Impostazioni → Integrazioni.",
+      "destinationLabel": "Destinazione",
+      "layoutLabel": "Layout di pagina",
+      "layoutGeneral": "Nota generale",
+      "layoutMeeting": "Riunione",
+      "contentLabel": "Contenuto",
+      "contentOriginal": "Note originali",
+      "contentEnhanced": "Note migliorate",
+      "staleEnhancedWarning": "Le note della riunione migliorate non sono disponibili o non sono aggiornate. Genera prima le note oppure pubblica quelle originali.",
+      "transcriptLabel": "Includi trascrizione",
+      "transcriptAvailable": "Aggiunta in una sezione compressa.",
+      "transcriptUnavailable": "Questa nota non ha una trascrizione.",
+      "previewLabel": "Anteprima approssimativa",
+      "previewBlocks": "{{count}} blocchi",
+      "previewEmpty": "Nessun contenuto",
+      "previewFailedFallback": "Impossibile generare l'anteprima di Notion",
+      "duplicateNotice": "Questo identico contenuto è già stato pubblicato.",
+      "openExisting": "Apri la pagina esistente",
+      "publishAnother": "Pubblica un'altra copia",
+      "publish": "Pubblica",
+      "publishFailedFallback": "Pubblicazione su Notion non riuscita",
+      "publishedToast": "Pubblicato su Notion",
+      "openInNotion": "Apri in Notion"
     }
   },
   "commandSearch": {

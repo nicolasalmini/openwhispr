@@ -2782,7 +2782,8 @@
       "calendar": "Calendar",
       "api": "API",
       "mcp": "MCP",
-      "cli": "CLI"
+      "cli": "CLI",
+      "knowledge": "Knowledge & publishing"
     },
     "api": {
       "title": "API keys",
@@ -2837,6 +2838,48 @@
     "notABot": {
       "title": "OpenWhispr is a meeting recorder, not a bot",
       "description": "OpenWhispr captures audio directly from your system — it never joins your meetings as a participant. Just connect your calendar and take notes as normal."
+    },
+    "notion": {
+      "connectedBadge": "Connected",
+      "connectedWorkspaceFallback": "Connected workspace",
+      "description": "Publish notes and meeting summaries to a Notion data source.",
+      "connect": "Connect",
+      "disconnectAria": "Disconnect Notion",
+      "browserToastTitle": "Finish connecting in your browser",
+      "browserToastDescription": "Return here after granting OpenWhispr access to Notion.",
+      "connectFailedTitle": "Could not connect Notion",
+      "connectFailedFallback": "Could not start Notion authorization",
+      "connectionFailedTitle": "Notion connection failed",
+      "destinationLabel": "Destination",
+      "destinationEmpty": "Choose where notes are published",
+      "destinationChange": "Change",
+      "destinationChoose": "Choose",
+      "refreshAria": "Refresh destination schema",
+      "destinationRefreshed": "Notion destination refreshed",
+      "refreshFailedTitle": "Could not refresh the destination",
+      "layoutLabel": "Default page layout",
+      "layoutDescription": "You can override this before publishing.",
+      "layoutGeneral": "General note",
+      "layoutMeeting": "Meeting",
+      "transcriptLabel": "Include transcript",
+      "transcriptDescription": "Add the transcript when one is available.",
+      "settingsUpdateFailedTitle": "Could not update Notion settings",
+      "dialogTitle": "Choose a Notion destination",
+      "dialogDescription": "Select a data source shared with OpenWhispr. Newly shared databases can take a moment to appear.",
+      "searchPlaceholder": "Search data sources",
+      "searchFailedTitle": "Could not load Notion destinations",
+      "searchFailedFallback": "Could not load Notion data sources",
+      "searchEmpty": "No shared data sources found. Share one with OpenWhispr, then refresh.",
+      "fallbackLabel": "Use a database URL or ID",
+      "fallbackPlaceholder": "Paste a Notion database URL or ID",
+      "fallbackSubmit": "Use",
+      "saveFailedTitle": "Could not save destination",
+      "saveFailedFallback": "Could not save the Notion destination",
+      "destinationSaved": "Notion destination saved",
+      "disconnectTitle": "Disconnect Notion?",
+      "disconnectDescription": "OpenWhispr will remove the locally stored credentials. Existing Notion pages are not changed.",
+      "disconnectConfirm": "Disconnect",
+      "disconnectFailedTitle": "Could not disconnect Notion"
     }
   },
   "notesView": {
@@ -2891,6 +2934,37 @@
           "linkUnavailable": "Generate or rotate the link to copy it"
         }
       }
+    },
+    "notion": {
+      "publishAria": "Publish to Notion",
+      "publishedAria": "Open published Notion page",
+      "publishedTitle": "Published to Notion",
+      "dialogTitle": "Publish to Notion",
+      "dialogDescription": "Create a new page from this note. OpenWhispr never changes an existing Notion page.",
+      "noDestinationTitle": "Choose a destination first",
+      "noDestinationDescription": "Connect Notion and select a data source in Settings → Integrations.",
+      "destinationLabel": "Destination",
+      "layoutLabel": "Page layout",
+      "layoutGeneral": "General note",
+      "layoutMeeting": "Meeting",
+      "contentLabel": "Content",
+      "contentOriginal": "Original notes",
+      "contentEnhanced": "Enhanced notes",
+      "staleEnhancedWarning": "Enhanced meeting notes are unavailable or stale. Generate notes first, or publish the original notes.",
+      "transcriptLabel": "Include transcript",
+      "transcriptAvailable": "Add it in a collapsed section.",
+      "transcriptUnavailable": "This note has no transcript.",
+      "previewLabel": "Approximate preview",
+      "previewBlocks": "{{count}} blocks",
+      "previewEmpty": "No content",
+      "previewFailedFallback": "Could not build the Notion preview",
+      "duplicateNotice": "This exact content is already published.",
+      "openExisting": "Open existing page",
+      "publishAnother": "Publish another copy",
+      "publish": "Publish",
+      "publishFailedFallback": "Publishing to Notion failed",
+      "publishedToast": "Published to Notion",
+      "openInNotion": "Open in Notion"
     }
   },
   "commandSearch": {

@@ -2641,7 +2641,8 @@
       "calendar": "日历",
       "api": "API",
       "mcp": "MCP",
-      "cli": "CLI"
+      "cli": "CLI",
+      "knowledge": "知识与发布"
     },
     "api": {
       "title": "API 密钥",
@@ -2696,6 +2697,48 @@
     "notABot": {
       "title": "OpenWhispr 是会议录制工具，不是机器人",
       "description": "OpenWhispr 直接从您的系统捕获音频 — 它不会以参与者身份加入您的会议。只需连接日历，正常记录笔记即可。"
+    },
+    "notion": {
+      "connectedBadge": "已连接",
+      "connectedWorkspaceFallback": "已连接的工作区",
+      "description": "将笔记和会议摘要发布到 Notion 数据源。",
+      "connect": "连接",
+      "disconnectAria": "断开 Notion 连接",
+      "browserToastTitle": "请在浏览器中完成连接",
+      "browserToastDescription": "授予 OpenWhispr 访问 Notion 的权限后，请回到这里。",
+      "connectFailedTitle": "无法连接 Notion",
+      "connectFailedFallback": "无法启动 Notion 授权",
+      "connectionFailedTitle": "Notion 连接失败",
+      "destinationLabel": "发布位置",
+      "destinationEmpty": "选择笔记的发布位置",
+      "destinationChange": "更改",
+      "destinationChoose": "选择",
+      "refreshAria": "刷新发布位置的架构",
+      "destinationRefreshed": "Notion 发布位置已刷新",
+      "refreshFailedTitle": "无法刷新发布位置",
+      "layoutLabel": "默认页面布局",
+      "layoutDescription": "发布前可以更改。",
+      "layoutGeneral": "普通笔记",
+      "layoutMeeting": "会议",
+      "transcriptLabel": "包含转录",
+      "transcriptDescription": "有转录时会一并添加。",
+      "settingsUpdateFailedTitle": "无法更新 Notion 设置",
+      "dialogTitle": "选择 Notion 发布位置",
+      "dialogDescription": "选择已与 OpenWhispr 共享的数据源。刚共享的数据库可能需要片刻才会显示。",
+      "searchPlaceholder": "搜索数据源",
+      "searchFailedTitle": "无法加载 Notion 发布位置",
+      "searchFailedFallback": "无法加载 Notion 数据源",
+      "searchEmpty": "未找到共享的数据源。请先与 OpenWhispr 共享，然后刷新。",
+      "fallbackLabel": "使用数据库 URL 或 ID",
+      "fallbackPlaceholder": "粘贴 Notion 数据库 URL 或 ID",
+      "fallbackSubmit": "使用",
+      "saveFailedTitle": "无法保存发布位置",
+      "saveFailedFallback": "无法保存 Notion 发布位置",
+      "destinationSaved": "Notion 发布位置已保存",
+      "disconnectTitle": "断开 Notion 连接？",
+      "disconnectDescription": "OpenWhispr 将删除本地存储的凭据。现有的 Notion 页面不会改变。",
+      "disconnectConfirm": "断开连接",
+      "disconnectFailedTitle": "无法断开 Notion 连接"
     }
   },
   "calendar": {
@@ -2790,6 +2833,37 @@
           "linkUnavailable": "生成或更换链接后即可复制"
         }
       }
+    },
+    "notion": {
+      "publishAria": "发布到 Notion",
+      "publishedAria": "打开已发布的 Notion 页面",
+      "publishedTitle": "已发布到 Notion",
+      "dialogTitle": "发布到 Notion",
+      "dialogDescription": "从这条笔记创建一个新页面。OpenWhispr 绝不会更改现有的 Notion 页面。",
+      "noDestinationTitle": "请先选择发布位置",
+      "noDestinationDescription": "请连接 Notion，并在 设置 → 集成 中选择数据源。",
+      "destinationLabel": "发布位置",
+      "layoutLabel": "页面布局",
+      "layoutGeneral": "普通笔记",
+      "layoutMeeting": "会议",
+      "contentLabel": "内容",
+      "contentOriginal": "原始笔记",
+      "contentEnhanced": "增强笔记",
+      "staleEnhancedWarning": "增强的会议笔记不可用或已过期。请先生成笔记，或发布原始笔记。",
+      "transcriptLabel": "包含转录",
+      "transcriptAvailable": "添加到可折叠的部分中。",
+      "transcriptUnavailable": "这条笔记没有转录。",
+      "previewLabel": "大致预览",
+      "previewBlocks": "{{count}} 个块",
+      "previewEmpty": "无内容",
+      "previewFailedFallback": "无法生成 Notion 预览",
+      "duplicateNotice": "完全相同的内容已发布。",
+      "openExisting": "打开现有页面",
+      "publishAnother": "再发布一份",
+      "publish": "发布",
+      "publishFailedFallback": "发布到 Notion 失败",
+      "publishedToast": "已发布到 Notion",
+      "openInNotion": "在 Notion 中打开"
     }
   },
   "commandSearch": {

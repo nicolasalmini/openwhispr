@@ -407,6 +407,7 @@ class IPCHandlers {
     this.whisperCudaManager = managers.whisperCudaManager;
     this.whisperVulkanManager = managers.whisperVulkanManager;
     this.googleCalendarManager = managers.googleCalendarManager;
+    this.notionIntegration = managers.notionIntegration;
     this.meetingDetectionEngine = managers.meetingDetectionEngine;
     this.audioTapManager = managers.audioTapManager;
     this.linuxPortalAudioManager = managers.linuxPortalAudioManager;
@@ -8522,6 +8523,142 @@ class IPCHandlers {
         return { success: true, event };
       } catch (error) {
         return { success: false, event: null };
+      }
+    });
+
+    // Notion publishing. Credentials and network calls stay in the main process.
+    ipcMain.handle("notion-start-oauth", async () => {
+      try {
+        return await this.notionIntegration.startOAuth();
+      } catch (error) {
+        debugLogger.error(
+          "Notion OAuth start failed",
+          { error: error.message, code: error.code },
+          "notion"
+        );
+        return { success: false, error: error.message, code: error.code };
+      }
+    });
+
+    ipcMain.handle("notion-get-status", () => {
+      try {
+        return { success: true, ...this.notionIntegration.getStatus() };
+      } catch (error) {
+        return { success: false, connected: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle("notion-disconnect", async () => {
+      try {
+        return await this.notionIntegration.disconnect();
+      } catch (error) {
+        debugLogger.error(
+          "Notion disconnect failed",
+          { error: error.message, code: error.code },
+          "notion"
+        );
+        return { success: false, error: error.message, code: error.code };
+      }
+    });
+
+    ipcMain.handle("notion-search-data-sources", async (_event, query = "") => {
+      try {
+        const dataSources = await this.notionIntegration.searchDataSources(
+          String(query).slice(0, 200)
+        );
+        return { success: true, dataSources };
+      } catch (error) {
+        return { success: false, dataSources: [], error: error.message, code: error.code };
+      }
+    });
+
+    ipcMain.handle("notion-save-destination", async (_event, input = {}) => {
+      try {
+        const destination = await this.notionIntegration.saveDestination({
+          dataSourceId:
+            typeof input.dataSourceId === "string" ? input.dataSourceId.slice(0, 200) : undefined,
+          dataSourceName:
+            typeof input.dataSourceName === "string"
+              ? input.dataSourceName.slice(0, 500)
+              : undefined,
+          databaseUrlOrId:
+            typeof input.databaseUrlOrId === "string"
+              ? input.databaseUrlOrId.slice(0, 2048)
+              : undefined,
+          layoutKey: input.layoutKey === "meeting" ? "meeting" : "general",
+          includeTranscript: input.includeTranscript === true,
+        });
+        return { success: true, destination };
+      } catch (error) {
+        return { success: false, error: error.message, code: error.code };
+      }
+    });
+
+    ipcMain.handle("notion-refresh-destination", async () => {
+      try {
+        const destination = await this.notionIntegration.refreshDestination();
+        return { success: true, destination };
+      } catch (error) {
+        return { success: false, error: error.message, code: error.code };
+      }
+    });
+
+    ipcMain.handle("notion-update-destination-settings", async (_event, settings = {}) => {
+      try {
+        const destination = this.notionIntegration.updateDestinationSettings({
+          layoutKey: settings.layoutKey === "meeting" ? "meeting" : "general",
+          includeTranscript: settings.includeTranscript === true,
+        });
+        return { success: true, destination };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle("notion-preview-publication", (_event, noteId, options = {}) => {
+      try {
+        const preview = this.notionIntegration.previewPublication(Number(noteId), options);
+        return {
+          success: true,
+          destination: preview.destination,
+          duplicate: preview.duplicate,
+          preview: preview.preview,
+          blockCount: preview.payload.blocks.length,
+          layoutKey: preview.payload.layoutKey,
+          contentSource: preview.payload.contentSource,
+          includeTranscript: preview.payload.includeTranscript,
+        };
+      } catch (error) {
+        return { success: false, error: error.message, code: error.code };
+      }
+    });
+
+    ipcMain.handle("notion-publish", async (_event, noteId, options = {}) => {
+      try {
+        return await this.notionIntegration.publish(Number(noteId), {
+          layoutKey: options.layoutKey === "meeting" ? "meeting" : "general",
+          contentSource: options.contentSource === "original" ? "original" : "enhanced",
+          includeTranscript: options.includeTranscript === true,
+          allowDuplicate: options.allowDuplicate === true,
+        });
+      } catch (error) {
+        debugLogger.error(
+          "Notion publish failed",
+          { error: error.message, code: error.code },
+          "notion"
+        );
+        return { success: false, error: error.message, code: error.code };
+      }
+    });
+
+    ipcMain.handle("notion-get-publication-status", (_event, noteId) => {
+      try {
+        return {
+          success: true,
+          publication: this.notionIntegration.getPublicationStatus(Number(noteId)),
+        };
+      } catch (error) {
+        return { success: false, publication: null, error: error.message };
       }
     });
 

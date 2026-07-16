@@ -281,6 +281,7 @@ const TextEditMonitor = require("./src/helpers/textEditMonitor");
 const WhisperCudaManager = require("./src/helpers/whisperCudaManager");
 const WhisperVulkanManager = require("./src/helpers/whisperVulkanManager");
 const GoogleCalendarManager = require("./src/helpers/googleCalendarManager");
+const NotionIntegration = require("./src/helpers/notionIntegration");
 const MeetingProcessDetector = require("./src/helpers/meetingProcessDetector");
 const AudioActivityDetector = require("./src/helpers/audioActivityDetector");
 const AudioTapManager = require("./src/helpers/audioTapManager");
@@ -312,6 +313,7 @@ let textEditMonitor = null;
 let whisperCudaManager = null;
 let whisperVulkanManager = null;
 let googleCalendarManager = null;
+let notionIntegration = null;
 let meetingDetectionEngine = null;
 let audioTapManager = null;
 let linuxPortalAudioManager = null;
@@ -398,6 +400,14 @@ function initializeCoreManagers() {
   parakeetManager = new ParakeetManager();
   diarizationManager = new DiarizationManager();
   googleCalendarManager = new GoogleCalendarManager(databaseManager, windowManager);
+  notionIntegration = new NotionIntegration(databaseManager, {
+    oauthProtocol: OAUTH_PROTOCOL,
+    onConnectionChanged: (data) => {
+      if (isLiveWindow(windowManager?.controlPanelWindow)) {
+        windowManager.controlPanelWindow.webContents.send("notion-connection-changed", data);
+      }
+    },
+  });
   meetingDetectionEngine = new MeetingDetectionEngine(
     googleCalendarManager,
     new MeetingProcessDetector(),
@@ -440,6 +450,7 @@ function initializeCoreManagers() {
     whisperCudaManager,
     whisperVulkanManager,
     googleCalendarManager,
+    notionIntegration,
     meetingDetectionEngine,
     audioTapManager,
     linuxPortalAudioManager,
@@ -661,6 +672,13 @@ async function applySessionTokenAndRefresh(token) {
 
 async function handleOAuthDeepLink(deepLinkUrl) {
   try {
+    if (notionIntegration && (await notionIntegration.handleDeepLink(deepLinkUrl))) {
+      if (isLiveWindow(windowManager?.controlPanelWindow)) {
+        windowManager.controlPanelWindow.show();
+        windowManager.controlPanelWindow.focus();
+      }
+      return;
+    }
     const parsed = new URL(deepLinkUrl);
     const bearerToken = parsed.searchParams.get("bearer_token");
     if (bearerToken) {

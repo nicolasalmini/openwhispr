@@ -67,6 +67,58 @@ export interface NoteItem {
   team_id?: string | null;
 }
 
+export type NotionLayoutKey = "meeting" | "general";
+export type NotionPublicationStatus =
+  "pending" | "publishing" | "published" | "partial" | "failed" | "needs_reauth";
+
+export interface NotionConnection {
+  id: number;
+  bot_id: string;
+  workspace_id: string;
+  workspace_name: string | null;
+  workspace_icon: string | null;
+  access_token_expires_at: number | null;
+  connected_at: string;
+  updated_at: string;
+}
+
+export interface NotionDestination {
+  id: number;
+  connection_id: number;
+  data_source_id: string;
+  database_id: string | null;
+  data_source_name: string;
+  schema_snapshot: string;
+  layout_key: NotionLayoutKey;
+  include_transcript: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotionPublication {
+  id: number;
+  note_id: number;
+  client_note_id: string | null;
+  destination_id: number;
+  content_hash: string;
+  notion_page_id: string | null;
+  notion_page_url: string | null;
+  next_block_index: number;
+  status: NotionPublicationStatus;
+  attempt_count: number;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotionDataSource {
+  id: string;
+  name: string;
+  icon: unknown;
+  parent: unknown;
+  url: string | null;
+}
+
 export type ShareVisibility = "private" | "link" | "domain" | "invited";
 
 export interface ShareSettings {
@@ -1707,6 +1759,95 @@ declare global {
           attendees: string | null;
         } | null;
       }>;
+
+      // Notion
+      notionStartOAuth?: () => Promise<{
+        success: boolean;
+        flowId?: string;
+        expiresAt?: number;
+        error?: string;
+        code?: string;
+      }>;
+      notionGetStatus?: () => Promise<{
+        success: boolean;
+        connected: boolean;
+        connection?: NotionConnection | null;
+        destination?: NotionDestination | null;
+        error?: string;
+      }>;
+      notionDisconnect?: () => Promise<{ success: boolean; error?: string; code?: string }>;
+      notionSearchDataSources?: (query?: string) => Promise<{
+        success: boolean;
+        dataSources: NotionDataSource[];
+        error?: string;
+        code?: string;
+      }>;
+      notionSaveDestination?: (input: {
+        dataSourceId?: string;
+        dataSourceName?: string;
+        databaseUrlOrId?: string;
+        layoutKey: NotionLayoutKey;
+        includeTranscript: boolean;
+      }) => Promise<{
+        success: boolean;
+        destination?: NotionDestination;
+        error?: string;
+        code?: string;
+      }>;
+      notionRefreshDestination?: () => Promise<{
+        success: boolean;
+        destination?: NotionDestination;
+        error?: string;
+        code?: string;
+      }>;
+      notionUpdateDestinationSettings?: (settings: {
+        layoutKey: NotionLayoutKey;
+        includeTranscript: boolean;
+      }) => Promise<{ success: boolean; destination?: NotionDestination; error?: string }>;
+      notionPreviewPublication?: (
+        noteId: number,
+        options: {
+          layoutKey: NotionLayoutKey;
+          contentSource: "enhanced" | "original";
+          includeTranscript: boolean;
+        }
+      ) => Promise<{
+        success: boolean;
+        destination?: NotionDestination;
+        duplicate?: NotionPublication | null;
+        preview?: string;
+        blockCount?: number;
+        error?: string;
+        code?: string;
+      }>;
+      notionPublish?: (
+        noteId: number,
+        options: {
+          layoutKey: NotionLayoutKey;
+          contentSource: "enhanced" | "original";
+          includeTranscript: boolean;
+          allowDuplicate?: boolean;
+        }
+      ) => Promise<{
+        success: boolean;
+        publication?: NotionPublication;
+        pageUrl?: string;
+        duplicate?: NotionPublication;
+        error?: string;
+        code?: string;
+        retryable?: boolean;
+      }>;
+      notionGetPublicationStatus?: (
+        noteId: number
+      ) => Promise<{ success: boolean; publication: NotionPublication | null; error?: string }>;
+      onNotionConnectionChanged?: (
+        callback: (data: {
+          connected: boolean;
+          connection?: NotionConnection;
+          error?: string;
+          code?: string;
+        }) => void
+      ) => () => void;
 
       // Contacts
       searchContacts: (query: string) => Promise<{

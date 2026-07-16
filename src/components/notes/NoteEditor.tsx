@@ -14,10 +14,12 @@ import {
   Plus,
   Check,
   Share2,
+  Blocks,
 } from "lucide-react";
 import ShareNoteDialog from "./ShareNoteDialog";
+import NotionPublishDialog from "./NotionPublishDialog";
 import { useShareCacheEntry } from "../../stores/noteStore";
-import { SHARING_ENABLED } from "../../lib/features";
+import { NOTION_ENABLED, SHARING_ENABLED } from "../../lib/features";
 import { RichTextEditor } from "../ui/RichTextEditor";
 import type { Editor } from "@tiptap/react";
 import { MeetingTranscriptChat, SelectionBar } from "./MeetingTranscriptChat";
@@ -30,7 +32,7 @@ import {
   DropdownMenuSeparator,
 } from "../ui/dropdown-menu";
 import { cn } from "../lib/utils";
-import type { NoteItem, FolderItem } from "../../types/electron";
+import type { NoteItem, FolderItem, NotionPublication } from "../../types/electron";
 import type { ActionProcessingState } from "../../hooks/useActionProcessing";
 import ActionProcessingOverlay from "./ActionProcessingOverlay";
 import NoteBottomBar from "./NoteBottomBar";
@@ -152,6 +154,8 @@ export default function NoteEditor({
   const [newFolderName, setNewFolderName] = useState("");
   const [isDiarizing, setIsDiarizing] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [notionDialogOpen, setNotionDialogOpen] = useState(false);
+  const [notionPublication, setNotionPublication] = useState<NotionPublication | null>(null);
   const shareCache = useShareCacheEntry(note.cloud_id);
   const isShared = (shareCache?.share.visibility ?? "private") !== "private";
   const [diarizedSegments, setDiarizedSegments] = useState<TranscriptSegment[] | null>(null);
@@ -330,6 +334,17 @@ export default function NoteEditor({
       titleRef.current.textContent = note.title || "";
     }
   }, [note.title]);
+
+  useEffect(() => {
+    if (!NOTION_ENABLED) return;
+    let cancelled = false;
+    void window.electronAPI?.notionGetPublicationStatus?.(note.id).then((result) => {
+      if (!cancelled) setNotionPublication(result?.publication || null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [note.id]);
 
   const prevRecordingForDiarizationRef = useRef(false);
   useEffect(() => {
@@ -810,6 +825,35 @@ export default function NoteEditor({
                   />
                 </button>
               )}
+              {NOTION_ENABLED && (
+                <>
+                  {notionPublication?.status === "published" &&
+                    notionPublication.notion_page_url && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          window.electronAPI?.openExternal?.(notionPublication.notion_page_url!)
+                        }
+                        className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 transition-colors hover:bg-emerald-500/15 dark:text-emerald-400"
+                        aria-label={t("noteEditor.notion.publishedAria")}
+                        title={t("noteEditor.notion.publishedTitle")}
+                      >
+                        <Blocks size={11} />
+                        <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      </button>
+                    )}
+                  <button
+                    type="button"
+                    onClick={() => setNotionDialogOpen(true)}
+                    disabled={isRecording}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-foreground/4 text-foreground/50 transition-colors hover:bg-foreground/8 hover:text-foreground/70 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white/5 dark:text-foreground/40 dark:hover:bg-white/8 dark:hover:text-foreground/60"
+                    aria-label={t("noteEditor.notion.publishAria")}
+                    title={t("noteEditor.notion.publishAria")}
+                  >
+                    <span className="text-[11px] font-bold leading-none">N</span>
+                  </button>
+                </>
+              )}
               {(onExportNote || onExportTranscript) && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -981,6 +1025,15 @@ export default function NoteEditor({
       )}
       {SHARING_ENABLED && note.cloud_id && (
         <ShareNoteDialog open={shareDialogOpen} onOpenChange={setShareDialogOpen} note={note} />
+      )}
+      {NOTION_ENABLED && (
+        <NotionPublishDialog
+          note={note}
+          open={notionDialogOpen}
+          onOpenChange={setNotionDialogOpen}
+          enhancedIsStale={enhancement?.isStale}
+          onPublished={setNotionPublication}
+        />
       )}
     </div>
   );

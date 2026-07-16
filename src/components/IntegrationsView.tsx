@@ -19,6 +19,8 @@ import { canManageSystemAudioInApp } from "../utils/systemAudioAccess";
 import ApiKeysSection from "./ApiKeysSection";
 import CliIntegrationCard from "./CliIntegrationCard";
 import McpIntegrationCard from "./McpIntegrationCard";
+import NotionIntegrationCard from "./NotionIntegrationCard";
+import { NOTION_ENABLED } from "../lib/features";
 import googleCalendarIcon from "../assets/icons/google-calendar.svg";
 
 const API_DOCS_URL = "https://docs.openwhispr.com/api/overview";
@@ -117,6 +119,13 @@ export default function IntegrationsView({ isPaid, onUpgrade }: IntegrationsView
         <h2 className="text-base font-semibold text-foreground">{t("integrations.title")}</h2>
         <p className="text-xs text-muted-foreground/70 mt-0.5">{t("integrations.description")}</p>
       </div>
+
+      {NOTION_ENABLED && (
+        <div>
+          <SectionLabel>{t("integrations.sections.knowledge")}</SectionLabel>
+          <NotionIntegrationCard />
+        </div>
+      )}
 
       <div>
         <SectionLabel>{t("integrations.sections.calendar")}</SectionLabel>

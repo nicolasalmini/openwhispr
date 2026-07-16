@@ -2641,7 +2641,8 @@
       "calendar": "行事曆",
       "api": "API",
       "mcp": "MCP",
-      "cli": "CLI"
+      "cli": "CLI",
+      "knowledge": "知識與發佈"
     },
     "api": {
       "title": "API 金鑰",
@@ -2696,6 +2697,48 @@
     "notABot": {
       "title": "OpenWhispr 是會議錄製工具，不是機器人",
       "description": "OpenWhispr 直接從您的系統擷取音訊 — 它不會以參與者身分加入您的會議。只需連接日曆，正常記錄筆記即可。"
+    },
+    "notion": {
+      "connectedBadge": "已連接",
+      "connectedWorkspaceFallback": "已連接的工作區",
+      "description": "將筆記和會議摘要發佈到 Notion 資料來源。",
+      "connect": "連接",
+      "disconnectAria": "中斷 Notion 連接",
+      "browserToastTitle": "請在瀏覽器中完成連接",
+      "browserToastDescription": "授予 OpenWhispr 存取 Notion 的權限後，請回到這裡。",
+      "connectFailedTitle": "無法連接 Notion",
+      "connectFailedFallback": "無法啟動 Notion 授權",
+      "connectionFailedTitle": "Notion 連接失敗",
+      "destinationLabel": "發佈位置",
+      "destinationEmpty": "選擇筆記的發佈位置",
+      "destinationChange": "變更",
+      "destinationChoose": "選擇",
+      "refreshAria": "重新整理發佈位置的結構",
+      "destinationRefreshed": "Notion 發佈位置已重新整理",
+      "refreshFailedTitle": "無法重新整理發佈位置",
+      "layoutLabel": "預設頁面版面",
+      "layoutDescription": "發佈前可以變更。",
+      "layoutGeneral": "一般筆記",
+      "layoutMeeting": "會議",
+      "transcriptLabel": "包含逐字稿",
+      "transcriptDescription": "有逐字稿時會一併加入。",
+      "settingsUpdateFailedTitle": "無法更新 Notion 設定",
+      "dialogTitle": "選擇 Notion 發佈位置",
+      "dialogDescription": "選擇已與 OpenWhispr 共用的資料來源。剛共用的資料庫可能需要片刻才會顯示。",
+      "searchPlaceholder": "搜尋資料來源",
+      "searchFailedTitle": "無法載入 Notion 發佈位置",
+      "searchFailedFallback": "無法載入 Notion 資料來源",
+      "searchEmpty": "找不到共用的資料來源。請先與 OpenWhispr 共用，然後重新整理。",
+      "fallbackLabel": "使用資料庫 URL 或 ID",
+      "fallbackPlaceholder": "貼上 Notion 資料庫 URL 或 ID",
+      "fallbackSubmit": "使用",
+      "saveFailedTitle": "無法儲存發佈位置",
+      "saveFailedFallback": "無法儲存 Notion 發佈位置",
+      "destinationSaved": "Notion 發佈位置已儲存",
+      "disconnectTitle": "中斷 Notion 連接？",
+      "disconnectDescription": "OpenWhispr 將移除本機儲存的憑證。現有的 Notion 頁面不會改變。",
+      "disconnectConfirm": "中斷連接",
+      "disconnectFailedTitle": "無法中斷 Notion 連接"
     }
   },
   "calendar": {
@@ -2790,6 +2833,37 @@
           "linkUnavailable": "產生或更換連結後即可複製"
         }
       }
+    },
+    "notion": {
+      "publishAria": "發佈到 Notion",
+      "publishedAria": "開啟已發佈的 Notion 頁面",
+      "publishedTitle": "已發佈到 Notion",
+      "dialogTitle": "發佈到 Notion",
+      "dialogDescription": "從這則筆記建立新頁面。OpenWhispr 絕不會變更現有的 Notion 頁面。",
+      "noDestinationTitle": "請先選擇發佈位置",
+      "noDestinationDescription": "請連接 Notion，並在 設定 → 整合 中選擇資料來源。",
+      "destinationLabel": "發佈位置",
+      "layoutLabel": "頁面版面",
+      "layoutGeneral": "一般筆記",
+      "layoutMeeting": "會議",
+      "contentLabel": "內容",
+      "contentOriginal": "原始筆記",
+      "contentEnhanced": "強化筆記",
+      "staleEnhancedWarning": "強化的會議筆記無法使用或已過期。請先產生筆記，或發佈原始筆記。",
+      "transcriptLabel": "包含逐字稿",
+      "transcriptAvailable": "加入到可摺疊的區段中。",
+      "transcriptUnavailable": "這則筆記沒有逐字稿。",
+      "previewLabel": "大致預覽",
+      "previewBlocks": "{{count}} 個區塊",
+      "previewEmpty": "無內容",
+      "previewFailedFallback": "無法產生 Notion 預覽",
+      "duplicateNotice": "完全相同的內容已發佈。",
+      "openExisting": "開啟現有頁面",
+      "publishAnother": "再發佈一份",
+      "publish": "發佈",
+      "publishFailedFallback": "發佈到 Notion 失敗",
+      "publishedToast": "已發佈到 Notion",
+      "openInNotion": "在 Notion 中開啟"
     }
   },
   "commandSearch": {

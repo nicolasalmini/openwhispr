@@ -2646,7 +2646,8 @@
       "calendar": "カレンダー",
       "api": "API",
       "mcp": "MCP",
-      "cli": "CLI"
+      "cli": "CLI",
+      "knowledge": "ナレッジと公開"
     },
     "api": {
       "title": "APIキー",
@@ -2701,6 +2702,48 @@
     "notABot": {
       "title": "OpenWhispr はミーティング録音ツールであり、ボットではありません",
       "description": "OpenWhispr はシステムから直接オーディオをキャプチャします — 参加者としてミーティングに参加することはありません。カレンダーを接続して、通常通りノートを取るだけです。"
+    },
+    "notion": {
+      "connectedBadge": "接続済み",
+      "connectedWorkspaceFallback": "接続済みワークスペース",
+      "description": "ノートや会議の要約を Notion のデータソースに公開します。",
+      "connect": "接続",
+      "disconnectAria": "Notion を切断",
+      "browserToastTitle": "ブラウザで接続を完了してください",
+      "browserToastDescription": "OpenWhispr に Notion へのアクセスを許可したら、ここに戻ってください。",
+      "connectFailedTitle": "Notion に接続できませんでした",
+      "connectFailedFallback": "Notion の認証を開始できませんでした",
+      "connectionFailedTitle": "Notion への接続に失敗しました",
+      "destinationLabel": "公開先",
+      "destinationEmpty": "ノートの公開先を選択してください",
+      "destinationChange": "変更",
+      "destinationChoose": "選択",
+      "refreshAria": "公開先のスキーマを更新",
+      "destinationRefreshed": "Notion の公開先を更新しました",
+      "refreshFailedTitle": "公開先を更新できませんでした",
+      "layoutLabel": "デフォルトのページレイアウト",
+      "layoutDescription": "公開前に変更できます。",
+      "layoutGeneral": "一般ノート",
+      "layoutMeeting": "会議",
+      "transcriptLabel": "文字起こしを含める",
+      "transcriptDescription": "文字起こしがある場合に追加します。",
+      "settingsUpdateFailedTitle": "Notion の設定を更新できませんでした",
+      "dialogTitle": "Notion の公開先を選択",
+      "dialogDescription": "OpenWhispr と共有されたデータソースを選択してください。共有したばかりのデータベースは表示までに少し時間がかかることがあります。",
+      "searchPlaceholder": "データソースを検索",
+      "searchFailedTitle": "Notion の公開先を読み込めませんでした",
+      "searchFailedFallback": "Notion のデータソースを読み込めませんでした",
+      "searchEmpty": "共有されたデータソースが見つかりません。OpenWhispr と共有してから更新してください。",
+      "fallbackLabel": "データベースの URL または ID を使用",
+      "fallbackPlaceholder": "Notion データベースの URL または ID を貼り付け",
+      "fallbackSubmit": "使用",
+      "saveFailedTitle": "公開先を保存できませんでした",
+      "saveFailedFallback": "Notion の公開先を保存できませんでした",
+      "destinationSaved": "Notion の公開先を保存しました",
+      "disconnectTitle": "Notion を切断しますか？",
+      "disconnectDescription": "OpenWhispr はローカルに保存された認証情報を削除します。既存の Notion ページは変更されません。",
+      "disconnectConfirm": "切断",
+      "disconnectFailedTitle": "Notion を切断できませんでした"
     }
   },
   "calendar": {
@@ -2795,6 +2838,37 @@
           "linkUnavailable": "リンクをコピーするには生成またはローテーションしてください"
         }
       }
+    },
+    "notion": {
+      "publishAria": "Notion に公開",
+      "publishedAria": "公開済みの Notion ページを開く",
+      "publishedTitle": "Notion に公開済み",
+      "dialogTitle": "Notion に公開",
+      "dialogDescription": "このノートから新しいページを作成します。OpenWhispr が既存の Notion ページを変更することはありません。",
+      "noDestinationTitle": "まず公開先を選択してください",
+      "noDestinationDescription": "Notion を接続し、設定 → 連携 でデータソースを選択してください。",
+      "destinationLabel": "公開先",
+      "layoutLabel": "ページレイアウト",
+      "layoutGeneral": "一般ノート",
+      "layoutMeeting": "会議",
+      "contentLabel": "内容",
+      "contentOriginal": "元のノート",
+      "contentEnhanced": "強化されたノート",
+      "staleEnhancedWarning": "強化された会議ノートが利用できないか古くなっています。先にノートを生成するか、元のノートを公開してください。",
+      "transcriptLabel": "文字起こしを含める",
+      "transcriptAvailable": "折りたたみセクションに追加されます。",
+      "transcriptUnavailable": "このノートには文字起こしがありません。",
+      "previewLabel": "おおよそのプレビュー",
+      "previewBlocks": "{{count}} ブロック",
+      "previewEmpty": "内容がありません",
+      "previewFailedFallback": "Notion のプレビューを作成できませんでした",
+      "duplicateNotice": "まったく同じ内容がすでに公開されています。",
+      "openExisting": "既存のページを開く",
+      "publishAnother": "別のコピーを公開",
+      "publish": "公開",
+      "publishFailedFallback": "Notion への公開に失敗しました",
+      "publishedToast": "Notion に公開しました",
+      "openInNotion": "Notion で開く"
     }
   },
   "commandSearch": {

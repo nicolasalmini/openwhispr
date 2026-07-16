@@ -5,6 +5,7 @@ const { randomUUID } = require("crypto");
 const debugLogger = require("./debugLogger");
 const { buildNoteSearchQuery } = require("./noteSearch");
 const { app } = require("electron");
+const secretCrypto = require("./secretCrypto");
 
 // Server-enforced trigger cap (openwhispr-api); enforced here so one oversized
 // trigger can't 400 the whole sync batch.
@@ -372,6 +373,66 @@ class DatabaseManager {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
       `);
+
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS notion_connections (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          bot_id TEXT NOT NULL UNIQUE,
+          workspace_id TEXT NOT NULL,
+          workspace_name TEXT,
+          workspace_icon TEXT,
+          encrypted_access_token BLOB NOT NULL,
+          encrypted_refresh_token BLOB,
+          access_token_expires_at INTEGER,
+          connected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- PRAGMA foreign_keys is off in this database, so referential cleanup is
+        -- done manually (deleteNotionConnection, saveNotionConnection, deleteNote).
+        CREATE TABLE IF NOT EXISTS notion_destinations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          connection_id INTEGER NOT NULL REFERENCES notion_connections(id),
+          data_source_id TEXT NOT NULL,
+          database_id TEXT,
+          data_source_name TEXT NOT NULL,
+          schema_snapshot TEXT NOT NULL,
+          layout_key TEXT NOT NULL DEFAULT 'general' CHECK(layout_key IN ('meeting', 'general')),
+          include_transcript INTEGER NOT NULL DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(connection_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS notion_publications (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          note_id INTEGER NOT NULL REFERENCES notes(id),
+          client_note_id TEXT,
+          destination_id INTEGER NOT NULL REFERENCES notion_destinations(id),
+          content_hash TEXT NOT NULL,
+          notion_page_id TEXT,
+          notion_page_url TEXT,
+          next_block_index INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'publishing', 'published', 'partial', 'failed', 'needs_reauth')),
+          attempt_count INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_notion_publications_note
+          ON notion_publications(note_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_notion_publications_duplicate
+          ON notion_publications(note_id, destination_id, content_hash, status);
+      `);
+
+      try {
+        // Early builds stored a payload_snapshot that was never read back;
+        // resume correctness is guaranteed by content_hash equality instead.
+        this.db.exec("ALTER TABLE notion_publications DROP COLUMN payload_snapshot");
+      } catch (err) {
+        // Column already absent.
+      }
 
       try {
         this.db.exec("ALTER TABLE google_calendars ADD COLUMN account_email TEXT");
@@ -1582,6 +1643,7 @@ class DatabaseManager {
       );
       const hardDeleteFolder = this.db.prepare("DELETE FROM folders WHERE id = ?");
       this.db.transaction(() => {
+        this._deleteNotionPublicationsForFolder(id);
         hardDeleteNotes.run(id);
         if (folder.cloud_id) tombstoneFolder.run(id);
         else hardDeleteFolder.run(id);
@@ -2769,7 +2831,10 @@ class DatabaseManager {
   hardDeleteNote(id) {
     try {
       if (!this.db) throw new Error("Database not initialized");
-      const result = this.db.prepare("DELETE FROM notes WHERE id = ?").run(id);
+      const result = this.db.transaction(() => {
+        this.db.prepare("DELETE FROM notion_publications WHERE note_id = ?").run(id);
+        return this.db.prepare("DELETE FROM notes WHERE id = ?").run(id);
+      })();
       return { success: result.changes > 0, id };
     } catch (error) {
       debugLogger.error("Error hard deleting note", { error: error.message }, "database");
@@ -2816,6 +2881,7 @@ class DatabaseManager {
         .all(id)
         .map((row) => row.id);
       const result = this.db.transaction(() => {
+        this._deleteNotionPublicationsForFolder(id);
         this.db.prepare("DELETE FROM notes WHERE folder_id = ?").run(id);
         return this.db.prepare("DELETE FROM folders WHERE id = ?").run(id);
       })();
@@ -3185,6 +3251,287 @@ class DatabaseManager {
       debugLogger.error("Error removing speaker mapping", { error: error.message }, "database");
       throw error;
     }
+  }
+
+  saveNotionConnection(connection) {
+    if (!this.db) throw new Error("Database not initialized");
+    if (!secretCrypto.isAvailable()) {
+      throw new Error("Secure credential storage is unavailable on this device");
+    }
+    if (!connection.botId || !connection.workspaceId || !connection.accessToken) {
+      throw new Error("Invalid Notion connection payload");
+    }
+
+    const save = this.db.transaction(() => {
+      const previous = this.db.prepare("SELECT id FROM notion_connections").all();
+      for (const row of previous) {
+        this._deleteNotionDestinationsForConnection(row.id);
+      }
+      this.db.prepare("DELETE FROM notion_connections").run();
+      const result = this.db
+        .prepare(
+          `INSERT INTO notion_connections (
+             bot_id, workspace_id, workspace_name, workspace_icon,
+             encrypted_access_token, encrypted_refresh_token, access_token_expires_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          connection.botId,
+          connection.workspaceId,
+          connection.workspaceName || null,
+          connection.workspaceIcon || null,
+          secretCrypto.encrypt(connection.accessToken),
+          connection.refreshToken ? secretCrypto.encrypt(connection.refreshToken) : null,
+          connection.accessTokenExpiresAt || null
+        );
+      return result.lastInsertRowid;
+    });
+
+    return this.getNotionConnection(save());
+  }
+
+  getNotionConnection(id = null) {
+    if (!this.db) throw new Error("Database not initialized");
+    const row = id
+      ? this.db
+          .prepare(
+            `SELECT id, bot_id, workspace_id, workspace_name, workspace_icon,
+                    access_token_expires_at, connected_at, updated_at
+             FROM notion_connections WHERE id = ?`
+          )
+          .get(id)
+      : this.db
+          .prepare(
+            `SELECT id, bot_id, workspace_id, workspace_name, workspace_icon,
+                    access_token_expires_at, connected_at, updated_at
+             FROM notion_connections ORDER BY updated_at DESC LIMIT 1`
+          )
+          .get();
+    return row || null;
+  }
+
+  getNotionConnectionCredentials(id = null) {
+    if (!this.db) throw new Error("Database not initialized");
+    const row = id
+      ? this.db.prepare("SELECT * FROM notion_connections WHERE id = ?").get(id)
+      : this.db.prepare("SELECT * FROM notion_connections ORDER BY updated_at DESC LIMIT 1").get();
+    if (!row) return null;
+
+    const access = secretCrypto.decrypt(Buffer.from(row.encrypted_access_token));
+    const refresh = row.encrypted_refresh_token
+      ? secretCrypto.decrypt(Buffer.from(row.encrypted_refresh_token))
+      : null;
+    if (access.needsReencrypt || refresh?.needsReencrypt) {
+      try {
+        this.rotateNotionTokens(row.id, {
+          accessToken: access.value,
+          refreshToken: refresh?.value || null,
+          accessTokenExpiresAt: row.access_token_expires_at,
+        });
+      } catch (error) {
+        // Re-encryption is opportunistic; never let it block credential reads.
+        debugLogger.warn("Notion token re-encryption failed", { error: error.message }, "notion");
+      }
+    }
+    return {
+      id: row.id,
+      botId: row.bot_id,
+      workspaceId: row.workspace_id,
+      accessToken: access.value,
+      refreshToken: refresh?.value || null,
+      accessTokenExpiresAt: row.access_token_expires_at,
+    };
+  }
+
+  // A connection may legitimately have no refresh token; OAuth refresh responses
+  // are validated for both tokens before this is called (notionOAuth.refresh).
+  rotateNotionTokens(id, tokens) {
+    if (!this.db) throw new Error("Database not initialized");
+    if (!tokens.accessToken) {
+      throw new Error("A rotated Notion access token is required");
+    }
+    const rotate = this.db.transaction(() => {
+      const result = this.db
+        .prepare(
+          `UPDATE notion_connections
+           SET encrypted_access_token = ?, encrypted_refresh_token = ?,
+               access_token_expires_at = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`
+        )
+        .run(
+          secretCrypto.encrypt(tokens.accessToken),
+          tokens.refreshToken ? secretCrypto.encrypt(tokens.refreshToken) : null,
+          tokens.accessTokenExpiresAt || null,
+          id
+        );
+      if (result.changes !== 1) throw new Error("Notion connection not found");
+    });
+    rotate();
+    return this.getNotionConnection(id);
+  }
+
+  // Foreign keys are not enforced in this database, so dependent rows are
+  // removed explicitly.
+  _deleteNotionPublicationsForFolder(folderId) {
+    this.db
+      .prepare(
+        "DELETE FROM notion_publications WHERE note_id IN (SELECT id FROM notes WHERE folder_id = ?)"
+      )
+      .run(folderId);
+  }
+
+  _deleteNotionDestinationsForConnection(connectionId) {
+    this.db
+      .prepare(
+        `DELETE FROM notion_publications
+         WHERE destination_id IN (SELECT id FROM notion_destinations WHERE connection_id = ?)`
+      )
+      .run(connectionId);
+    this.db.prepare("DELETE FROM notion_destinations WHERE connection_id = ?").run(connectionId);
+  }
+
+  deleteNotionConnection(id) {
+    if (!this.db) throw new Error("Database not initialized");
+    const remove = this.db.transaction(() => {
+      this._deleteNotionDestinationsForConnection(id);
+      return this.db.prepare("DELETE FROM notion_connections WHERE id = ?").run(id);
+    });
+    return { success: remove().changes > 0 };
+  }
+
+  saveNotionDestination(destination) {
+    if (!this.db) throw new Error("Database not initialized");
+    const schemaSnapshot =
+      typeof destination.schemaSnapshot === "string"
+        ? destination.schemaSnapshot
+        : JSON.stringify(destination.schemaSnapshot || {});
+    this.db
+      .prepare(
+        `INSERT INTO notion_destinations (
+           connection_id, data_source_id, database_id, data_source_name,
+           schema_snapshot, layout_key, include_transcript
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(connection_id) DO UPDATE SET
+           data_source_id = excluded.data_source_id,
+           database_id = excluded.database_id,
+           data_source_name = excluded.data_source_name,
+           schema_snapshot = excluded.schema_snapshot,
+           layout_key = excluded.layout_key,
+           include_transcript = excluded.include_transcript,
+           updated_at = CURRENT_TIMESTAMP`
+      )
+      .run(
+        destination.connectionId,
+        destination.dataSourceId,
+        destination.databaseId || null,
+        destination.dataSourceName || "Untitled data source",
+        schemaSnapshot,
+        destination.layoutKey === "meeting" ? "meeting" : "general",
+        destination.includeTranscript ? 1 : 0
+      );
+    return this.getNotionDestination(destination.connectionId);
+  }
+
+  getNotionDestination(connectionId = null) {
+    if (!this.db) throw new Error("Database not initialized");
+    const row = connectionId
+      ? this.db
+          .prepare("SELECT * FROM notion_destinations WHERE connection_id = ? LIMIT 1")
+          .get(connectionId)
+      : this.db.prepare("SELECT * FROM notion_destinations ORDER BY updated_at DESC LIMIT 1").get();
+    return row || null;
+  }
+
+  getNotionDestinationById(id) {
+    if (!this.db) throw new Error("Database not initialized");
+    return this.db.prepare("SELECT * FROM notion_destinations WHERE id = ?").get(id) || null;
+  }
+
+  createNotionPublication(publication) {
+    if (!this.db) throw new Error("Database not initialized");
+    const result = this.db
+      .prepare(
+        `INSERT INTO notion_publications (
+           note_id, client_note_id, destination_id, content_hash
+         ) VALUES (?, ?, ?, ?)`
+      )
+      .run(
+        publication.noteId,
+        publication.clientNoteId || null,
+        publication.destinationId,
+        publication.contentHash
+      );
+    return this.db
+      .prepare("SELECT * FROM notion_publications WHERE id = ?")
+      .get(result.lastInsertRowid);
+  }
+
+  updateNotionPublication(id, updates) {
+    if (!this.db) throw new Error("Database not initialized");
+    const fields = {
+      status: "status",
+      attemptCount: "attempt_count",
+      lastError: "last_error",
+      notionPageId: "notion_page_id",
+      notionPageUrl: "notion_page_url",
+      nextBlockIndex: "next_block_index",
+    };
+    const assignments = [];
+    const values = [];
+    for (const [key, column] of Object.entries(fields)) {
+      if (Object.prototype.hasOwnProperty.call(updates, key)) {
+        assignments.push(`${column} = ?`);
+        values.push(updates[key]);
+      }
+    }
+    if (assignments.length) {
+      values.push(id);
+      this.db
+        .prepare(
+          `UPDATE notion_publications SET ${assignments.join(", ")}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+        )
+        .run(...values);
+    }
+    return this.db.prepare("SELECT * FROM notion_publications WHERE id = ?").get(id) || null;
+  }
+
+  getLatestNotionPublication(noteId) {
+    if (!this.db) throw new Error("Database not initialized");
+    return (
+      this.db
+        .prepare(
+          `SELECT * FROM notion_publications
+           WHERE note_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1`
+        )
+        .get(noteId) || null
+    );
+  }
+
+  findPublishedNotionPublication(noteId, destinationId, hash) {
+    if (!this.db) throw new Error("Database not initialized");
+    return (
+      this.db
+        .prepare(
+          `SELECT * FROM notion_publications
+           WHERE note_id = ? AND destination_id = ? AND content_hash = ? AND status = 'published'
+           ORDER BY id DESC LIMIT 1`
+        )
+        .get(noteId, destinationId, hash) || null
+    );
+  }
+
+  findResumableNotionPublication(noteId, destinationId, hash) {
+    if (!this.db) throw new Error("Database not initialized");
+    return (
+      this.db
+        .prepare(
+          `SELECT * FROM notion_publications
+           WHERE note_id = ? AND destination_id = ? AND content_hash = ?
+             AND status IN ('pending', 'publishing', 'partial', 'failed', 'needs_reauth')
+           ORDER BY id DESC LIMIT 1`
+        )
+        .get(noteId, destinationId, hash) || null
+    );
   }
 }
 
