@@ -2530,6 +2530,11 @@ class IPCHandlers {
       } catch (e) {
         errors.push(`MCal stop: ${e.message}`);
       }
+      try {
+        this.appleCalendarManager?.stop();
+      } catch (e) {
+        errors.push(`ACal stop: ${e.message}`);
+      }
 
       // Revoke Google OAuth tokens before DB is closed
       try {
