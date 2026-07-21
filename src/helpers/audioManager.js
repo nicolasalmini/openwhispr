@@ -44,6 +44,7 @@ import {
   resolveDictationRouteKind,
   resolveDictationAgentReachability,
   resolveDictationTranslationReachability,
+  resolveDictationAgentProvider,
 } from "./dictationRouting";
 import { resolvePrompt } from "../config/prompts";
 import { syncService } from "../services/SyncService.js";
@@ -165,9 +166,11 @@ function resolveReasoningRoute(
     };
   }
   if (kind === "agent") {
-    const provider = isCloudAgent
-      ? "openwhispr"
-      : settings.dictationAgentProvider?.trim() || undefined;
+    const provider = resolveDictationAgentProvider({
+      isCloudAgent,
+      dictationAgentMode: settings.dictationAgentMode,
+      dictationAgentProvider: settings.dictationAgentProvider,
+    });
     const isCustomAgent = settings.dictationAgentMode === "providers" && provider === "custom";
     return {
       kind: "agent",
