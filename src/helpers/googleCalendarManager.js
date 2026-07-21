@@ -1,7 +1,8 @@
-const { net, BrowserWindow } = require("electron");
+const { net } = require("electron");
 const debugLogger = require("./debugLogger");
 const GoogleCalendarOAuth = require("./googleCalendarOAuth");
 const CalendarSyncInterval = require("./calendarSyncInterval");
+const { broadcastToWindows } = require("./windowBroadcast");
 
 const CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3";
 
@@ -52,7 +53,7 @@ class GoogleCalendarManager {
 
     if (this.accounts.size === 0) {
       this.stop();
-      this.reminderScheduler.reset();
+      this.reminderScheduler.reset("google");
       this.reminderScheduler.scheduleNextMeeting();
     }
   }
@@ -87,7 +88,7 @@ class GoogleCalendarManager {
       this.stop();
       this.accounts.clear();
       this.databaseManager.clearGoogleCalendarData();
-      this.reminderScheduler.reset();
+      this.reminderScheduler.reset("google");
       this.reminderScheduler.scheduleNextMeeting();
       this._broadcastAccountsChanged();
     }
@@ -149,7 +150,7 @@ class GoogleCalendarManager {
       }
     }
 
-    this.broadcastToWindows("gcal-events-synced", {});
+    broadcastToWindows("gcal-events-synced", {});
     this.reminderScheduler.scheduleNextMeeting();
   }
 
@@ -274,23 +275,14 @@ class GoogleCalendarManager {
     if (!this.isConnected()) return;
 
     await this.fetchCalendars();
-    this.reminderScheduler.reset();
+    this.reminderScheduler.reset("google");
     await this.syncEvents();
     this.reminderScheduler.scheduleNextMeeting();
-    this.broadcastToWindows("gcal-events-synced", {});
+    broadcastToWindows("gcal-events-synced", {});
   }
 
   async getUpcomingEvents(windowMinutes) {
     return this.databaseManager.getUpcomingEvents(windowMinutes);
-  }
-
-  broadcastToWindows(channel, data) {
-    const windows = BrowserWindow.getAllWindows();
-    windows.forEach((win) => {
-      if (!win.isDestroyed()) {
-        win.webContents.send(channel, data);
-      }
-    });
   }
 
   _loadAccounts() {
@@ -307,7 +299,7 @@ class GoogleCalendarManager {
 
   _broadcastAccountsChanged() {
     const accounts = this.getAccounts();
-    this.broadcastToWindows("gcal-connection-changed", { accounts });
+    broadcastToWindows("gcal-connection-changed", { accounts });
   }
 
   async _apiGet(path, accountEmail = null) {

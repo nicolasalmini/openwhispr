@@ -8,24 +8,6 @@ export interface GoogleCalendar {
   sync_token: string | null;
 }
 
-export interface MicrosoftCalendar {
-  id: string;
-  summary: string;
-  background_color: string | null;
-  is_selected: number;
-  is_primary: number;
-  sync_token: string | null;
-  sync_token_expires_at: number | null;
-}
-
-export interface AppleCalendar {
-  id: string;
-  title: string;
-  color: string | null;
-  source_name: string | null;
-  is_selected: number;
-}
-
 export interface CalendarEvent {
   id: string;
   calendar_id: string;

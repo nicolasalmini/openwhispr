@@ -411,14 +411,9 @@ function initializeCoreManagers() {
   );
   microsoftCalendarManager = new MicrosoftCalendarManager(
     databaseManager,
-    windowManager,
     calendarReminderScheduler
   );
-  appleCalendarManager = new AppleCalendarManager(
-    databaseManager,
-    windowManager,
-    calendarReminderScheduler
-  );
+  appleCalendarManager = new AppleCalendarManager(databaseManager, calendarReminderScheduler);
   meetingDetectionEngine = new MeetingDetectionEngine(
     calendarReminderScheduler,
     new MeetingProcessDetector(),

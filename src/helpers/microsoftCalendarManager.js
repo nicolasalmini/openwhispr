@@ -1,8 +1,9 @@
-const { net, BrowserWindow } = require("electron");
+const { net } = require("electron");
 const debugLogger = require("./debugLogger");
 const MicrosoftCalendarOAuth = require("./microsoftCalendarOAuth");
 const CalendarSyncInterval = require("./calendarSyncInterval");
 const { extractMeetingUrl } = require("./meetingJoinUrl");
+const { broadcastToWindows } = require("./windowBroadcast");
 
 const GRAPH_API_BASE = "https://graph.microsoft.com/v1.0";
 
@@ -26,9 +27,8 @@ function normalizeGraphDateTime({ dateTime }) {
 }
 
 class MicrosoftCalendarManager {
-  constructor(databaseManager, windowManager, reminderScheduler) {
+  constructor(databaseManager, reminderScheduler) {
     this.databaseManager = databaseManager;
-    this.windowManager = windowManager;
     this.reminderScheduler = reminderScheduler;
     this.oauth = new MicrosoftCalendarOAuth(databaseManager);
     this.accounts = new Map();
@@ -72,7 +72,7 @@ class MicrosoftCalendarManager {
 
     if (this.accounts.size === 0) {
       this.stop();
-      this.reminderScheduler.reset();
+      this.reminderScheduler.reset("microsoft");
       this.reminderScheduler.scheduleNextMeeting();
     }
   }
@@ -99,7 +99,7 @@ class MicrosoftCalendarManager {
       this.stop();
       this.accounts.clear();
       this.databaseManager.clearMicrosoftCalendarData();
-      this.reminderScheduler.reset();
+      this.reminderScheduler.reset("microsoft");
       this.reminderScheduler.scheduleNextMeeting();
       this._broadcastAccountsChanged();
     }
@@ -162,7 +162,7 @@ class MicrosoftCalendarManager {
       }
     }
 
-    this.broadcastToWindows("mcal-events-synced", {});
+    broadcastToWindows("mcal-events-synced", {});
     this.reminderScheduler.scheduleNextMeeting();
   }
 
@@ -273,19 +273,10 @@ class MicrosoftCalendarManager {
     if (!this.isConnected()) return;
 
     await this.fetchCalendars();
-    this.reminderScheduler.reset();
+    this.reminderScheduler.reset("microsoft");
     await this.syncEvents();
     this.reminderScheduler.scheduleNextMeeting();
-    this.broadcastToWindows("mcal-events-synced", {});
-  }
-
-  broadcastToWindows(channel, data) {
-    const windows = BrowserWindow.getAllWindows();
-    windows.forEach((win) => {
-      if (!win.isDestroyed()) {
-        win.webContents.send(channel, data);
-      }
-    });
+    broadcastToWindows("mcal-events-synced", {});
   }
 
   _loadAccounts() {
@@ -312,7 +303,7 @@ class MicrosoftCalendarManager {
 
   _broadcastAccountsChanged() {
     const accounts = this.getAccounts();
-    this.broadcastToWindows("mcal-connection-changed", { accounts });
+    broadcastToWindows("mcal-connection-changed", { accounts });
   }
 
   async _apiGet(path, accountEmail) {
