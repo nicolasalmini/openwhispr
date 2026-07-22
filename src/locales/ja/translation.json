@@ -1324,7 +1324,9 @@
         "localDesc": "端末上のモデル。完全プライベート。",
         "selfHostedDesc": "自前サーバーをネットワーク上に。",
         "enterprise": "エンタープライズ",
-        "enterpriseDesc": "組織のクラウドアカウントを使用 (AWS, Azure, GCP)。"
+        "enterpriseDesc": "組織のクラウドアカウントを使用 (AWS, Azure, GCP)。",
+        "agentCli": "エージェント CLI",
+        "agentCliDesc": "インストール済みの Claude または Devin CLI で音声入力を整形します。"
       },
       "openwhisprCloud": "OpenWhispr Cloud",
       "openwhisprCloudDescription": "信頼できる精度。設定不要。",
@@ -1353,7 +1355,20 @@
         "switchedEnterprise": {
           "title": "エンタープライズ",
           "description": "組織のクラウドアカウントを使用しています。"
+        },
+        "switchedAgentCli": {
+          "title": "エージェント CLI",
+          "description": "ローカルで認証済みの Claude または Devin CLI を使用します。"
         }
+      },
+      "agentCli": {
+        "adapter": "CLI アダプター",
+        "model": "モデル",
+        "executablePath": "実行ファイルのパス（任意）",
+        "test": "認証をテスト",
+        "testing": "テスト中…",
+        "ready": "認証済み",
+        "unavailable": "利用不可または未認証"
       }
     },
     "developer": {

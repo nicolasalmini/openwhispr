@@ -412,6 +412,7 @@ const CLEANUP_MODE_TOAST_KEY: Record<InferenceMode, string> = {
   local: "switchedLocal",
   "self-hosted": "switchedSelfHosted",
   enterprise: "switchedEnterprise",
+  "agent-cli": "switchedAgentCli",
 };
 
 function NoteFormattingSettings() {

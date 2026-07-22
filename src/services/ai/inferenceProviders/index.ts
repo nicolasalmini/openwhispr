@@ -9,6 +9,7 @@ import { lanProvider } from "./lan";
 import { openaiProvider } from "./openai";
 import { tinfoilProvider } from "./tinfoil";
 import { cortiProvider } from "./corti";
+import { claudeCliProvider, devinCliProvider } from "./agentCli";
 
 export const PROVIDER_REGISTRY: Readonly<Record<string, InferenceProvider>> = Object.freeze({
   openai: openaiProvider,
@@ -25,6 +26,8 @@ export const PROVIDER_REGISTRY: Readonly<Record<string, InferenceProvider>> = Ob
   vertex: enterpriseProvider,
   openwhispr: openwhisprProvider,
   lan: lanProvider,
+  "claude-cli": claudeCliProvider,
+  "devin-cli": devinCliProvider,
 });
 
 export type { InferenceProvider, ProviderContext, ProviderCallParams } from "./types";

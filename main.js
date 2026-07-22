@@ -1797,6 +1797,7 @@ function performSyncTeardown() {
   if (windowsLoopbackAudioManager) windowsLoopbackAudioManager.stop().catch(() => {});
   if (meetingAecManager) meetingAecManager.stop().catch(() => {});
   if (ipcHandlers) ipcHandlers._cleanupTextEditMonitor();
+  if (ipcHandlers) ipcHandlers._cleanupAgentCli();
   if (textEditMonitor) textEditMonitor.stopMonitoring();
   if (updateManager) updateManager.cleanup();
 }

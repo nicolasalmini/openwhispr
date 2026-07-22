@@ -19,6 +19,8 @@ const { createTinfoilRealtimeSocket } = require("./tinfoilSecureClient");
 const { getTinfoilChatModels } = require("./tinfoilCatalog");
 const { transcribeWithTinfoil } = require("./tinfoilTranscription");
 const AudioStorageManager = require("./audioStorage");
+const { AgentCliRunner } = require("./agentCliRunner");
+const { registerAgentCliIpc } = require("./agentCliIpc");
 
 // Tinfoil's only realtime STT model — fallback when the renderer omits one.
 const TINFOIL_REALTIME_MODEL = "voxtral-mini-4b-realtime";
@@ -432,6 +434,7 @@ class IPCHandlers {
     this._textEditHandler = null;
     this._activeRecordingPipeline = null;
     this.audioStorageManager = new AudioStorageManager();
+    this.agentCliRunner = new AgentCliRunner();
     this._audioCleanupInterval = null;
     this._noteFilesEnabled = false;
     this.speakerDiarizationEnabled = true;
@@ -685,6 +688,10 @@ class IPCHandlers {
     }
   }
 
+  _cleanupAgentCli() {
+    this.agentCliRunner.killAll();
+  }
+
   async _logDetectedGpus() {
     const { listNvidiaGpus } = require("../utils/gpuDetection");
     const gpus = await listNvidiaGpus();
@@ -845,6 +852,7 @@ class IPCHandlers {
   }
 
   setupHandlers() {
+    registerAgentCliIpc(ipcMain, this.agentCliRunner);
     ipcMain.handle("window-minimize", () => {
       if (this.windowManager.controlPanelWindow) {
         this.windowManager.controlPanelWindow.minimize();

@@ -1324,7 +1324,9 @@
         "localDesc": "Модели на устройстве. Полная приватность.",
         "selfHostedDesc": "Свой сервер в вашей сети.",
         "enterprise": "Корпоративный",
-        "enterpriseDesc": "Используйте облачный аккаунт вашей организации (AWS, Azure, GCP)."
+        "enterpriseDesc": "Используйте облачный аккаунт вашей организации (AWS, Azure, GCP).",
+        "agentCli": "CLI-агент",
+        "agentCliDesc": "Использовать установленный CLI Claude или Devin для очистки диктовки."
       },
       "openwhisprCloud": "OpenWhispr Cloud",
       "openwhisprCloudDescription": "Надёжные результаты. Без настройки.",
@@ -1353,7 +1355,20 @@
         "switchedEnterprise": {
           "title": "Корпоративный",
           "description": "Используется облачный аккаунт вашей организации."
+        },
+        "switchedAgentCli": {
+          "title": "CLI-агент",
+          "description": "Используется локально аутентифицированный CLI Claude или Devin."
         }
+      },
+      "agentCli": {
+        "adapter": "CLI-адаптер",
+        "model": "Модель",
+        "executablePath": "Путь к исполняемому файлу (необязательно)",
+        "test": "Проверить аутентификацию",
+        "testing": "Проверка…",
+        "ready": "Аутентифицировано",
+        "unavailable": "Недоступно или не аутентифицировано"
       }
     },
     "developer": {

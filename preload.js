@@ -470,6 +470,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("process-local-reasoning", text, modelId, agentName, config),
   checkLocalReasoningAvailable: () => ipcRenderer.invoke("check-local-reasoning-available"),
 
+  // Dictation cleanup through an installed, fixed Agent CLI adapter
+  processAgentCliReasoning: (payload) => ipcRenderer.invoke("agent-cli-process", payload),
+  checkAgentCliAvailability: (payload) =>
+    ipcRenderer.invoke("agent-cli-check-availability", payload),
+  cancelAgentCliReasoning: (requestId) => ipcRenderer.invoke("agent-cli-cancel", requestId),
+
   // Anthropic reasoning
   processAnthropicReasoning: (text, modelId, agentName, config) =>
     ipcRenderer.invoke("process-anthropic-reasoning", text, modelId, agentName, config),
