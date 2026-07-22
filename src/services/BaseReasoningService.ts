@@ -13,6 +13,7 @@ export interface ReasoningConfig {
   provider?: string;
   disableThinking?: boolean;
   language?: string;
+  executablePath?: string;
 }
 
 export abstract class BaseReasoningService {

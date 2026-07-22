@@ -622,16 +622,19 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
               const [
                 { default: ReasoningService },
                 { getEffectiveCleanupModel, isCloudCleanupMode, getSettings },
+                { buildCleanupReasoningConfig },
               ] = await Promise.all([
                 import("../services/ReasoningService"),
                 import("../stores/settingsStore"),
+                import("../helpers/dictationRouting"),
               ]);
               const model = getEffectiveCleanupModel();
               const isCloud = isCloudCleanupMode();
               if (model || isCloud) {
                 const agentName = localStorage.getItem("agentName") || null;
+                const settings = getSettings();
                 const reasonedText = await ReasoningService.processText(rawText, model, agentName, {
-                  disableThinking: getSettings().cleanupDisableThinking,
+                  ...buildCleanupReasoningConfig(settings, isCloud),
                 });
                 if (reasonedText && reasonedText !== rawText) {
                   const updated = await window.electronAPI.updateTranscriptionText(

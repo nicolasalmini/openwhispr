@@ -11,19 +11,26 @@ import { SecureCache } from "../utils/SecureCache";
 import { withRetry, createApiRetryStrategy, httpError } from "../utils/retry";
 import { API_ENDPOINTS, TOKEN_LIMITS, buildApiUrl, ensureV1Suffix } from "../config/constants";
 import logger from "../utils/logger";
-import { getSettings, isCloudCleanupMode } from "../stores/settingsStore";
+import {
+  getSettings,
+  isCloudCleanupMode,
+  isCloudDictationAgentMode,
+  isCloudTranslationMode,
+} from "../stores/settingsStore";
 import { wrapCleanupTranscript } from "../config/prompts";
 import { stripThinkingTags } from "../helpers/stripThinking.js";
 import { streamText, stepCountIs } from "ai";
 import { getAIModel } from "./ai/providers";
 import { createEnterpriseChatModel } from "./ai/enterpriseChatModel";
 import { PROVIDER_REGISTRY, type ProviderContext } from "./ai/inferenceProviders";
+import { cancelActiveAgentCliReasoning } from "./ai/inferenceProviders/agentCli";
 import { getConfiguredOpenAIBase } from "./ai/openaiBase";
 import { applyThinkingSuppression } from "./ai/thinkingSuppression";
 import { detectEndpointDialect } from "./ai/thinkingSuppressionDialects";
 import { extractApiErrorMessage } from "./ai/apiErrorMessage";
 import { clearTinfoilClientCache } from "./ai/tinfoilClient";
 import { resolveChatRoute } from "../helpers/chatRouting";
+import { checkActiveReasoningAvailability } from "../helpers/reasoningAvailability";
 
 export type AgentStreamChunk =
   | { type: "content"; text: string }
@@ -336,7 +343,13 @@ class ReasoningService extends BaseReasoningService {
     const isLanCleanup = !!config.lanUrl || this.isLanCleanupMode();
     const providerId = isLanCleanup ? "lan" : config.provider || getModelProvider(trimmedModel);
 
-    if (!trimmedModel && providerId !== "openwhispr" && providerId !== "lan") {
+    if (
+      !trimmedModel &&
+      providerId !== "openwhispr" &&
+      providerId !== "lan" &&
+      providerId !== "claude-cli" &&
+      providerId !== "devin-cli"
+    ) {
       throw new Error("No reasoning model selected");
     }
 
@@ -740,6 +753,11 @@ class ReasoningService extends BaseReasoningService {
   cancelActiveStream(): void {
     this.streamAbortController?.abort();
     this.streamAbortController = null;
+    cancelActiveAgentCliReasoning();
+  }
+
+  cancelActiveCleanup(): boolean {
+    return cancelActiveAgentCliReasoning();
   }
 
   private streamFromIPC(
@@ -907,76 +925,21 @@ class ReasoningService extends BaseReasoningService {
 
   async isAvailable(): Promise<boolean> {
     try {
-      if (isCloudCleanupMode()) {
-        logger.logReasoning("API_KEY_CHECK", { cloudCleanupMode: true });
-        return true;
-      }
-
-      if (this.isLanCleanupMode()) {
-        logger.logReasoning("API_KEY_CHECK", { lanCleanup: true });
-        return true;
-      }
-
       const settings = getSettings();
-      if (settings.cleanupProvider === "custom" && settings.cleanupCloudBaseUrl?.trim()) {
-        logger.logReasoning("API_KEY_CHECK", {
-          customProvider: true,
-          hasCustomEndpoint: true,
-        });
-        return true;
-      }
-
-      // Enterprise providers: detect credentials by provider, short-circuit.
-      // Runtime auth errors (expired SSO, missing ADC) surface via
-      // mapEnterpriseError with actionable remediation copy.
-      if (settings.cleanupProvider === "bedrock") {
-        const hasBedrockCreds =
-          !!settings.bedrockProfile?.trim() ||
-          (!!settings.bedrockAccessKeyId?.trim() && !!settings.bedrockSecretAccessKey?.trim());
-        logger.logReasoning("API_KEY_CHECK", { bedrock: true, hasBedrockCreds });
-        if (hasBedrockCreds) return true;
-      }
-      if (settings.cleanupProvider === "azure") {
-        const hasAzureCreds = !!settings.azureApiKey?.trim() && !!settings.azureEndpoint?.trim();
-        logger.logReasoning("API_KEY_CHECK", { azure: true, hasAzureCreds });
-        if (hasAzureCreds) return true;
-      }
-      if (settings.cleanupProvider === "vertex") {
-        const hasVertexCreds = !!settings.vertexApiKey?.trim() || !!settings.vertexProject?.trim();
-        logger.logReasoning("API_KEY_CHECK", { vertex: true, hasVertexCreds });
-        if (hasVertexCreds) return true;
-      }
-
-      const openaiKey = await window.electronAPI?.getOpenAIKey?.();
-      const anthropicKey = await window.electronAPI?.getAnthropicKey?.();
-      const geminiKey = await window.electronAPI?.getGeminiKey?.();
-      const groqKey = await window.electronAPI?.getGroqKey?.();
-      const openrouterKey = await window.electronAPI?.getOpenrouterKey?.();
-      const tinfoilKey = await window.electronAPI?.getTinfoilKey?.();
-      const cortiKey = await window.electronAPI?.getCortiKey?.();
-      const localAvailable = await window.electronAPI?.checkLocalReasoningAvailable?.();
-
-      logger.logReasoning("API_KEY_CHECK", {
-        hasOpenAI: !!openaiKey,
-        hasAnthropic: !!anthropicKey,
-        hasGemini: !!geminiKey,
-        hasGroq: !!groqKey,
-        hasOpenrouter: !!openrouterKey,
-        hasTinfoil: !!tinfoilKey,
-        hasCorti: !!cortiKey,
-        hasLocal: !!localAvailable,
+      const available = await checkActiveReasoningAvailability(settings, window.electronAPI, {
+        cleanup: {
+          cloud: isCloudCleanupMode(),
+          lan: this.isLanCleanupMode(),
+        },
+        agent: { cloud: isCloudDictationAgentMode() },
+        translation: { cloud: isCloudTranslationMode() },
       });
-
-      return !!(
-        openaiKey ||
-        anthropicKey ||
-        geminiKey ||
-        groqKey ||
-        openrouterKey ||
-        tinfoilKey ||
-        cortiKey ||
-        localAvailable
-      );
+      logger.logReasoning("SELECTED_PROVIDER_AVAILABILITY", {
+        provider: settings.cleanupProvider,
+        mode: settings.cleanupMode,
+        available,
+      });
+      return available;
     } catch (error) {
       logger.logReasoning("API_KEY_CHECK_ERROR", {
         error: (error as Error).message,

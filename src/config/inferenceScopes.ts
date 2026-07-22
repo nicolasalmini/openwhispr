@@ -9,6 +9,7 @@ export interface InferenceScopeStoreKeys {
   remoteUrl?: keyof SettingsState;
   customApiKey?: keyof SettingsState;
   disableThinking?: keyof SettingsState;
+  executablePath?: keyof SettingsState;
 }
 
 export interface InferenceScopeDefinition {
@@ -27,6 +28,7 @@ export const INFERENCE_SCOPES = {
       remoteUrl: "cleanupRemoteUrl",
       customApiKey: "cleanupCustomApiKey",
       disableThinking: "cleanupDisableThinking",
+      executablePath: "cleanupAgentCliExecutablePath",
     },
   },
   dictationAgent: {

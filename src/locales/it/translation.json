@@ -1324,7 +1324,9 @@
         "localDesc": "Modelli sul dispositivo. Totalmente privato.",
         "selfHostedDesc": "Il tuo server nella tua rete.",
         "enterprise": "Enterprise",
-        "enterpriseDesc": "Usa l'account cloud della tua organizzazione (AWS, Azure, GCP)."
+        "enterpriseDesc": "Usa l'account cloud della tua organizzazione (AWS, Azure, GCP).",
+        "agentCli": "CLI agente",
+        "agentCliDesc": "Usa una CLI Claude o Devin installata per ripulire la dettatura."
       },
       "openwhisprCloud": "OpenWhispr Cloud",
       "openwhisprCloudDescription": "Risultati affidabili. Nessuna configurazione necessaria.",
@@ -1353,7 +1355,20 @@
         "switchedEnterprise": {
           "title": "Enterprise",
           "description": "Usa l'account cloud della tua organizzazione."
+        },
+        "switchedAgentCli": {
+          "title": "CLI agente",
+          "description": "Verrà usata la CLI Claude o Devin autenticata localmente."
         }
+      },
+      "agentCli": {
+        "adapter": "Adattatore CLI",
+        "model": "Modello",
+        "executablePath": "Percorso eseguibile (opzionale)",
+        "test": "Verifica autenticazione",
+        "testing": "Verifica…",
+        "ready": "Autenticato",
+        "unavailable": "Non disponibile o non autenticato"
       }
     },
     "developer": {

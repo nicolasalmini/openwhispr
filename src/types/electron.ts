@@ -3,7 +3,19 @@ import type { TinfoilCatalogModel } from "../models/tinfoilModels";
 
 export type LocalTranscriptionProvider = "whisper" | "nvidia";
 
-export type InferenceMode = "openwhispr" | "providers" | "local" | "self-hosted" | "enterprise";
+export type InferenceMode =
+  "openwhispr" | "providers" | "local" | "self-hosted" | "enterprise" | "agent-cli";
+
+export type AgentCliAdapter = "claude-cli" | "devin-cli";
+
+export interface AgentCliRequest {
+  requestId: string;
+  adapter: AgentCliAdapter;
+  model?: string;
+  executablePath?: string;
+  systemPrompt: string;
+  userPrompt: string;
+}
 
 export type SelfHostedType = "openai-compatible" | "lan";
 
@@ -967,6 +979,19 @@ declare global {
         config: any
       ) => Promise<{ success: boolean; text?: string; error?: string }>;
       checkLocalReasoningAvailable: () => Promise<boolean>;
+
+      processAgentCliReasoning: (payload: AgentCliRequest) => Promise<{
+        success: boolean;
+        requestId: string;
+        text?: string;
+        error?: string;
+        code?: string;
+      }>;
+      checkAgentCliAvailability: (payload: {
+        adapter: AgentCliAdapter;
+        executablePath?: string;
+      }) => Promise<{ available: boolean; adapter: AgentCliAdapter; code?: string }>;
+      cancelAgentCliReasoning: (requestId: string) => Promise<{ cancelled: boolean }>;
 
       // Anthropic reasoning
       processAnthropicReasoning: (

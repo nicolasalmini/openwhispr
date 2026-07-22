@@ -1,7 +1,7 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useTranslation } from "react-i18next";
-import { Cloud, Key, Cpu, Network, Building2 } from "lucide-react";
+import { Cloud, Key, Cpu, Network, Building2, Terminal } from "lucide-react";
 import {
   useSettingsStore,
   selectResolvedLLMConfig,
@@ -21,6 +21,7 @@ import {
   getCloudModel,
   getLocalModel,
 } from "../../models/ModelRegistry";
+import { createLatestRequestGuard } from "../../helpers/latestRequestGuard";
 
 function isProviderValidForMode(provider: string, mode: InferenceMode): boolean {
   switch (mode) {
@@ -34,6 +35,8 @@ function isProviderValidForMode(provider: string, mode: InferenceMode): boolean 
       return modelRegistry.getAllProviders().some((p) => p.id === provider);
     case "enterprise":
       return isEnterpriseProvider(provider);
+    case "agent-cli":
+      return provider === "claude-cli" || provider === "devin-cli";
     default:
       return true;
   }
@@ -63,6 +66,11 @@ export default function InferenceConfigEditor({ scope, onModeChange }: Inference
   const { t } = useTranslation();
   const config = useSettingsStore(useShallow((s) => selectResolvedLLMConfig(s, scope)));
   const isSignedIn = useSettingsStore((s) => s.isSignedIn);
+  const [agentCliStatus, setAgentCliStatus] = useState<"idle" | "checking" | "ready" | "missing">(
+    "idle"
+  );
+  const agentCliCheckGuard = useRef(createLatestRequestGuard());
+  useEffect(() => () => agentCliCheckGuard.current.invalidate(), []);
 
   const prefix = MODE_LABEL_PREFIX[scope];
   const modes: InferenceModeOption[] = [
@@ -98,6 +106,16 @@ export default function InferenceConfigEditor({ scope, onModeChange }: Inference
       description: t(`${prefix}.enterpriseDesc`),
       icon: <Building2 className="w-4 h-4" />,
     },
+    ...(scope === "dictationCleanup"
+      ? [
+          {
+            id: "agent-cli" as const,
+            label: t(`${prefix}.agentCli`),
+            description: t(`${prefix}.agentCliDesc`),
+            icon: <Terminal className="w-4 h-4" />,
+          },
+        ]
+      : []),
   ];
 
   const setField = useCallback(
@@ -115,24 +133,38 @@ export default function InferenceConfigEditor({ scope, onModeChange }: Inference
         return;
       }
       if (mode === config.mode) return;
+      agentCliCheckGuard.current.invalidate();
 
       const patch: Parameters<typeof setResolvedLLMConfig>[1] = {
         mode,
         cloudMode: mode === "openwhispr" ? "openwhispr" : "byok",
       };
-      if (!isProviderValidForMode(config.provider, mode)) {
+      if (mode === "agent-cli") {
+        const existingCliProvider =
+          config.provider === "claude-cli" || config.provider === "devin-cli";
+        patch.provider = existingCliProvider ? config.provider : "claude-cli";
+        patch.model = existingCliProvider
+          ? config.model.trim() || (config.provider === "devin-cli" ? "swe" : "haiku")
+          : "haiku";
+      }
+      if (mode !== "agent-cli" && !isProviderValidForMode(config.provider, mode)) {
         patch.provider = "";
         patch.model = "";
       }
       setResolvedLLMConfig(scope, patch);
 
-      if (mode === "openwhispr" || mode === "self-hosted" || mode === "enterprise") {
+      if (
+        mode === "openwhispr" ||
+        mode === "self-hosted" ||
+        mode === "enterprise" ||
+        mode === "agent-cli"
+      ) {
         window.electronAPI?.llamaServerStop?.();
       }
 
       onModeChange?.(mode);
     },
-    [scope, config.mode, config.provider, isSignedIn, onModeChange]
+    [scope, config.mode, config.provider, config.model, isSignedIn, onModeChange]
   );
 
   const setMode = setField("mode");
@@ -168,6 +200,96 @@ export default function InferenceConfigEditor({ scope, onModeChange }: Inference
 
       {config.mode === "providers" && renderModelSelector("cloud")}
       {config.mode === "local" && renderModelSelector("local")}
+
+      {config.mode === "agent-cli" && scope === "dictationCleanup" && (
+        <div className="space-y-3 rounded-lg border border-border p-3">
+          <label className="block space-y-1">
+            <span className="text-sm font-medium text-foreground">
+              {t("settingsPage.aiModels.agentCli.adapter")}
+            </span>
+            <select
+              value={config.provider}
+              onChange={(event) => {
+                const provider = event.target.value;
+                agentCliCheckGuard.current.invalidate();
+                setProvider(provider);
+                setModel(provider === "devin-cli" ? "swe" : "haiku");
+                setAgentCliStatus("idle");
+              }}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="claude-cli">Claude CLI</option>
+              <option value="devin-cli">Devin CLI</option>
+            </select>
+          </label>
+          <label className="block space-y-1">
+            <span className="text-sm font-medium text-foreground">
+              {t("settingsPage.aiModels.agentCli.model")}
+            </span>
+            <input
+              value={config.model}
+              onChange={(event) => setModel(event.target.value)}
+              placeholder={config.provider === "devin-cli" ? "swe" : "haiku"}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-sm font-medium text-foreground">
+              {t("settingsPage.aiModels.agentCli.executablePath")}
+            </span>
+            <input
+              value={config.executablePath ?? ""}
+              onChange={(event) => {
+                agentCliCheckGuard.current.invalidate();
+                setField("executablePath")(event.target.value);
+                setAgentCliStatus("idle");
+              }}
+              placeholder={
+                config.provider === "devin-cli" ? "/usr/local/bin/devin" : "/usr/local/bin/claude"
+              }
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            />
+          </label>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              disabled={agentCliStatus === "checking"}
+              onClick={async () => {
+                const checkGeneration = agentCliCheckGuard.current.begin();
+                setAgentCliStatus("checking");
+                try {
+                  const result = await window.electronAPI.checkAgentCliAvailability({
+                    adapter: config.provider === "devin-cli" ? "devin-cli" : "claude-cli",
+                    executablePath: config.executablePath?.trim() || undefined,
+                  });
+                  if (agentCliCheckGuard.current.isCurrent(checkGeneration)) {
+                    setAgentCliStatus(result.available ? "ready" : "missing");
+                  }
+                } catch {
+                  if (agentCliCheckGuard.current.isCurrent(checkGeneration)) {
+                    setAgentCliStatus("missing");
+                  }
+                }
+              }}
+              className="rounded-md border border-input px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+            >
+              {agentCliStatus === "checking"
+                ? t("settingsPage.aiModels.agentCli.testing")
+                : t("settingsPage.aiModels.agentCli.test")}
+            </button>
+            {agentCliStatus === "ready" && (
+              <span className="text-xs text-green-600">
+                {t("settingsPage.aiModels.agentCli.ready")}
+              </span>
+            )}
+            {agentCliStatus === "missing" && (
+              <span className="text-xs text-destructive">
+                {t("settingsPage.aiModels.agentCli.unavailable")}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {config.mode === "self-hosted" && (
         <OpenAICompatiblePanel

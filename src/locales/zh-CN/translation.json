@@ -1226,12 +1226,7 @@
           "annualEquivalent": "$16.67",
           "includesPrefix": "所有 Pro 功能 +",
           "badge": "最受欢迎",
-          "features": [
-            "无限会议录制",
-            "代理模式",
-            "与您的数据对话",
-            "优先支持"
-          ],
+          "features": ["无限会议录制", "代理模式", "与您的数据对话", "优先支持"],
           "cta": "开始使用",
           "switchToAnnual": "切换为年付"
         },
@@ -1324,7 +1319,9 @@
         "localDesc": "设备端模型，完全私密。",
         "selfHostedDesc": "你的服务器，在你的网络上。",
         "enterprise": "企业级",
-        "enterpriseDesc": "使用你组织的云账号（AWS、Azure、GCP）。"
+        "enterpriseDesc": "使用你组织的云账号（AWS、Azure、GCP）。",
+        "agentCli": "智能体 CLI",
+        "agentCliDesc": "使用已安装的 Claude 或 Devin CLI 清理听写文本。"
       },
       "openwhisprCloud": "OpenWhispr Cloud",
       "openwhisprCloudDescription": "准确可靠，无需设置。",
@@ -1353,7 +1350,20 @@
         "switchedEnterprise": {
           "title": "企业级",
           "description": "正在使用你组织的云账号。"
+        },
+        "switchedAgentCli": {
+          "title": "智能体 CLI",
+          "description": "使用本地已验证身份的 Claude 或 Devin CLI。"
         }
+      },
+      "agentCli": {
+        "adapter": "CLI 适配器",
+        "model": "模型",
+        "executablePath": "可执行文件路径（可选）",
+        "test": "测试身份验证",
+        "testing": "正在测试…",
+        "ready": "已验证身份",
+        "unavailable": "不可用或未验证身份"
       }
     },
     "developer": {

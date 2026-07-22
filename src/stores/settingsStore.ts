@@ -9,6 +9,7 @@ import type { LocalTranscriptionProvider, InferenceMode, SelfHostedType } from "
 import type { GoogleCalendarAccount } from "../types/calendar";
 import { PROMPT_KIND_LIST, type PromptKind } from "../config/prompts/registry";
 import { deriveReasoningMode, buildReasoningScopePatches } from "../helpers/reasoningRouting";
+import { resolveEffectiveCleanupModel } from "../helpers/dictationRouting";
 import {
   INFERENCE_SCOPES,
   type InferenceScope,
@@ -444,6 +445,7 @@ export interface SettingsState
   remoteTranscriptionModel: string;
   cleanupMode: InferenceMode;
   cleanupRemoteUrl: string;
+  cleanupAgentCliExecutablePath: string;
 
   meetingTranscriptionMode: InferenceMode;
   meetingUseLocalWhisper: boolean;
@@ -591,6 +593,7 @@ export interface SettingsState
   setUseDictationAgent: (value: boolean) => void;
   setCleanupModel: (value: string) => void;
   setCleanupProvider: (value: string) => void;
+  setCleanupAgentCliExecutablePath: (value: string) => void;
   setUiLanguage: (language: string) => void;
 
   setOpenaiApiKey: (key: string) => void;
@@ -941,6 +944,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   useDictationAgent: readBoolean("useDictationAgent", true),
   cleanupModel: readString("cleanupModel", ""),
   cleanupProvider: readString("cleanupProvider", "openai"),
+  cleanupAgentCliExecutablePath: readString("cleanupAgentCliExecutablePath", ""),
 
   // Secrets hydrate from main process in initializeSettings, never from localStorage.
   openaiApiKey: "",
@@ -1082,7 +1086,8 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
       v === "providers" ||
       v === "local" ||
       v === "self-hosted" ||
-      v === "enterprise"
+      v === "enterprise" ||
+      v === "agent-cli"
     )
       return v;
     return "openwhispr" as InferenceMode;
@@ -1338,6 +1343,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   setUseDictationAgent: createBooleanSetter("useDictationAgent"),
   setCleanupProvider: createStringSetter("cleanupProvider"),
   setCleanupModel: createStringSetter("cleanupModel"),
+  setCleanupAgentCliExecutablePath: createStringSetter("cleanupAgentCliExecutablePath"),
 
   setCustomDictionary: (words: string[]) => {
     if (isBrowser) localStorage.setItem("customDictionary", JSON.stringify(words));
@@ -2017,6 +2023,7 @@ export interface ResolvedLLMConfig {
   remoteUrl?: string;
   customApiKey?: string;
   disableThinking: boolean;
+  executablePath?: string;
 }
 
 export const selectResolvedLLMConfig = (
@@ -2046,6 +2053,7 @@ export const selectResolvedLLMConfig = (
     cloudBaseUrl: read("cloudBaseUrl") || fallback?.cloudBaseUrl,
     remoteUrl: read("remoteUrl") || fallback?.remoteUrl,
     customApiKey: read("customApiKey"),
+    executablePath: read("executablePath"),
     disableThinking,
   };
 };
@@ -2090,10 +2098,7 @@ export function getSettings() {
 
 export function getEffectiveCleanupModel() {
   const state = useSettingsStore.getState();
-  if (selectIsCloudCleanupMode(state)) {
-    return "";
-  }
-  return state.cleanupModel;
+  return resolveEffectiveCleanupModel(state, selectIsCloudCleanupMode(state));
 }
 
 export function isCloudCleanupMode() {

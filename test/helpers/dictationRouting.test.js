@@ -239,6 +239,81 @@ test("unreachable translation with unreachable cleanup skips reasoning", async (
   );
 });
 
+test("Agent CLI cleanup is reachable with its default model and keeps provider explicit", async () => {
+  const {
+    resolveCleanupReachability,
+    resolveEffectiveCleanupModel,
+    buildCleanupReasoningConfig,
+  } = await load();
+  const settings = {
+    useCleanupModel: true,
+    cleanupMode: "agent-cli",
+    cleanupProvider: "claude-cli",
+    cleanupModel: "",
+    cleanupAgentCliExecutablePath: "/opt/claude",
+    cleanupDisableThinking: true,
+  };
+
+  assert.equal(resolveCleanupReachability(settings, false), true);
+  assert.equal(resolveEffectiveCleanupModel(settings, false), "haiku");
+  assert.equal(
+    resolveEffectiveCleanupModel({ ...settings, cleanupProvider: "devin-cli" }, false),
+    "swe"
+  );
+  assert.deepEqual(buildCleanupReasoningConfig(settings, false), {
+    provider: "claude-cli",
+    executablePath: "/opt/claude",
+    disableThinking: true,
+  });
+});
+
+test("cleanup config is provider-explicit for BYOK, local, and self-hosted routes", async () => {
+  const { buildCleanupReasoningConfig } = await load();
+  assert.equal(
+    buildCleanupReasoningConfig({ cleanupMode: "providers", cleanupProvider: "anthropic" }, false)
+      .provider,
+    "anthropic"
+  );
+  assert.equal(
+    buildCleanupReasoningConfig({ cleanupMode: "local", cleanupProvider: "qwen" }, false).provider,
+    "local"
+  );
+  assert.deepEqual(
+    buildCleanupReasoningConfig(
+      {
+        cleanupMode: "self-hosted",
+        cleanupProvider: "custom",
+        cleanupRemoteUrl: "http://localhost:11434/v1",
+      },
+      false
+    ),
+    {
+      provider: "lan",
+      lanUrl: "http://localhost:11434/v1",
+      disableThinking: undefined,
+    }
+  );
+});
+
+test("reasoning availability cache key changes with selected adapter and executable", async () => {
+  const { buildReasoningAvailabilityKey } = await load();
+  const base = {
+    useCleanupModel: true,
+    cleanupMode: "agent-cli",
+    cleanupProvider: "claude-cli",
+    cleanupModel: "haiku",
+    cleanupAgentCliExecutablePath: "/opt/claude",
+    useDictationAgent: false,
+    useDictationTranslation: false,
+  };
+  const first = buildReasoningAvailabilityKey(base);
+  assert.notEqual(first, buildReasoningAvailabilityKey({ ...base, cleanupProvider: "devin-cli" }));
+  assert.notEqual(
+    first,
+    buildReasoningAvailabilityKey({ ...base, cleanupAgentCliExecutablePath: "/other/claude" })
+  );
+});
+
 test("normal dictation never takes the translation route", async () => {
   const { resolveDictationRouteKind } = await load();
 
@@ -340,4 +415,58 @@ test("translation needs a model on model-required providers", async () => {
     }),
     true
   );
+});
+
+test("reasoning availability cache key changes when translation becomes reachable", async () => {
+  const { buildReasoningAvailabilityKey } = await load();
+  const base = {
+    useCleanupModel: false,
+    useDictationAgent: false,
+    useDictationTranslation: true,
+    translationMode: "providers",
+    translationProvider: "anthropic",
+    translationModel: "claude-sonnet",
+    translationTargetLanguage: "",
+  };
+  assert.notEqual(
+    buildReasoningAvailabilityKey(base),
+    buildReasoningAvailabilityKey({ ...base, translationTargetLanguage: "ja" })
+  );
+});
+
+test("reasoning availability cache key includes xAI and Mistral credentials", async () => {
+  const { buildReasoningAvailabilityKey } = await load();
+  const base = { useCleanupModel: true, cleanupMode: "providers", cleanupProvider: "xai" };
+  const first = buildReasoningAvailabilityKey(base);
+  assert.notEqual(first, buildReasoningAvailabilityKey({ ...base, xaiApiKey: "configured" }));
+  assert.notEqual(first, buildReasoningAvailabilityKey({ ...base, mistralApiKey: "configured" }));
+});
+
+test("cleanup config trims an Agent CLI executable path before processing", async () => {
+  const { buildCleanupReasoningConfig } = await load();
+  assert.equal(
+    buildCleanupReasoningConfig(
+      {
+        cleanupMode: "agent-cli",
+        cleanupProvider: "claude-cli",
+        cleanupAgentCliExecutablePath: "  /opt/claude  ",
+      },
+      false
+    ).executablePath,
+    "/opt/claude"
+  );
+});
+
+test("cancelling processing kills active cleanup before clearing UI state", async () => {
+  const { cancelProcessingState } = await load();
+  const calls = [];
+  assert.equal(
+    cancelProcessingState({
+      isProcessing: true,
+      cancelActiveCleanup: () => calls.push("cancel"),
+      clearProcessingState: () => calls.push("clear"),
+    }),
+    true
+  );
+  assert.deepEqual(calls, ["cancel", "clear"]);
 });

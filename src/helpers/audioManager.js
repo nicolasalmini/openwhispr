@@ -44,6 +44,10 @@ import {
   resolveDictationRouteKind,
   resolveDictationAgentReachability,
   resolveDictationTranslationReachability,
+  resolveCleanupReachability,
+  buildCleanupReasoningConfig,
+  buildReasoningAvailabilityKey,
+  cancelProcessingState,
 } from "./dictationRouting";
 import { resolvePrompt } from "../config/prompts";
 import { syncService } from "../services/SyncService.js";
@@ -85,8 +89,8 @@ function resolveReasoningRoute(
   voiceAgentRequested,
   translationRequested
 ) {
-  const cleanupReachable =
-    !!settings.useCleanupModel && (!!settings.cleanupModel?.trim() || isCloudCleanupMode());
+  const cloudCleanup = isCloudCleanupMode();
+  const cleanupReachable = resolveCleanupReachability(settings, cloudCleanup);
   const agentModel = settings.dictationAgentModel?.trim() || "";
   const isCloudAgent = isCloudDictationAgentMode();
   const isSelfHostedAgent =
@@ -137,7 +141,7 @@ function resolveReasoningRoute(
       kind: "translation",
       model: settings.translationModel?.trim() || "",
       cleanupReachable,
-      cleanupConfig: { disableThinking: settings.cleanupDisableThinking },
+      cleanupConfig: buildCleanupReasoningConfig(settings, cloudCleanup),
       config: {
         provider,
         language: settings.translationTargetLanguage,
@@ -186,7 +190,7 @@ function resolveReasoningRoute(
   if (kind === "cleanup") {
     return {
       kind: "cleanup",
-      config: { disableThinking: settings.cleanupDisableThinking },
+      config: buildCleanupReasoningConfig(settings, cloudCleanup),
     };
   }
   return { kind: "skip" };
@@ -1087,6 +1091,9 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
 
   cancelRecording() {
     this.micRecovery.stop();
+    if (this.isProcessing && ReasoningService.cancelActiveCleanup()) {
+      return true;
+    }
     if (this._rotatingBatchRecorder) {
       this._cancelRequestedDuringMicRecovery = true;
       return true;
@@ -1191,12 +1198,14 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
   }
 
   cancelProcessing() {
-    if (this.isProcessing) {
-      this.isProcessing = false;
-      this.onStateChange?.({ isRecording: false, isProcessing: false });
-      return true;
-    }
-    return false;
+    return cancelProcessingState({
+      isProcessing: this.isProcessing,
+      cancelActiveCleanup: () => ReasoningService.cancelActiveCleanup(),
+      clearProcessingState: () => {
+        this.isProcessing = false;
+        this.onStateChange?.({ isRecording: false, isProcessing: false });
+      },
+    });
   }
 
   async processAudio(audioBlob, metadata = {}) {
@@ -1698,11 +1707,12 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
     const s = getSettings();
     const useReasoning =
       !!s.useCleanupModel || dictationAgentReachable(s) || translationChainReachable(s);
+    const availabilityKey = buildReasoningAvailabilityKey(s);
     const now = Date.now();
     const cacheValid =
       this.reasoningAvailabilityCache &&
       now < this.reasoningAvailabilityCache.expiresAt &&
-      this.cachedReasoningPreference === useReasoning;
+      this.cachedReasoningPreference === availabilityKey;
 
     if (cacheValid) {
       return this.reasoningAvailabilityCache.value;
@@ -1717,7 +1727,7 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
         value: false,
         expiresAt: now + REASONING_CACHE_TTL,
       };
-      this.cachedReasoningPreference = useReasoning;
+      this.cachedReasoningPreference = availabilityKey;
       return false;
     }
 
@@ -1726,7 +1736,7 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
         value: true,
         expiresAt: now + REASONING_CACHE_TTL,
       };
-      this.cachedReasoningPreference = useReasoning;
+      this.cachedReasoningPreference = availabilityKey;
       return true;
     }
 
@@ -1743,7 +1753,7 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
         value: isAvailable,
         expiresAt: now + REASONING_CACHE_TTL,
       };
-      this.cachedReasoningPreference = useReasoning;
+      this.cachedReasoningPreference = availabilityKey;
 
       return isAvailable;
     } catch (error) {
@@ -1756,7 +1766,7 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
         value: false,
         expiresAt: now + REASONING_CACHE_TTL,
       };
-      this.cachedReasoningPreference = useReasoning;
+      this.cachedReasoningPreference = availabilityKey;
       return false;
     }
   }
@@ -1863,7 +1873,7 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
     const isCloud = isCloudCleanupMode();
     const settings = getSettings();
     const cleanupProvider = settings.cleanupProvider || "auto";
-    const cleanupReachable = !!settings.useCleanupModel && (!!cleanupModel || isCloud);
+    const cleanupReachable = resolveCleanupReachability(settings, isCloud);
     const agentReachable = dictationAgentReachable(settings);
     const agentName =
       typeof window !== "undefined" && window.localStorage
